@@ -41,6 +41,8 @@ public final class Theme {
       public final Color sectionHeader;
       public final Color border;
       public final Color focusBorder;
+      /** Az osztópanelek elválasztó vonala – a border-nél kicsit erősebb. */
+      public final Color divider;
 
       /* --- szerkesztő --- */
       public final Color editorBg;
@@ -131,6 +133,7 @@ public final class Theme {
          sectionHeader = c[i++];
          border = c[i++];
          focusBorder = c[i++];
+         divider = c[i++];
          editorBg = c[i++];
          editorFg = c[i++];
          gutterFg = c[i++];
@@ -198,7 +201,7 @@ public final class Theme {
             h("3C3C3C"), h("CCCCCC"),                       // titleBar, fg
             h("333333"), h("858585"), h("FFFFFF"), h("FFFFFF"), // activityBar
             h("252526"), h("CCCCCC"), h("BBBBBB"), h("CCCCCC"), // sideBar
-            h("2B2B2B"), h("007FD4"),                       // border, focus
+            h("2B2B2B"), h("007FD4"), h("444444"),          // border, focus, divider
             h("1E1E1E"), h("D4D4D4"),                       // editor
             h("858585"), h("C6C6C6"),                       // gutter
             h("282828"), h("282828"),                       // current line
@@ -228,7 +231,7 @@ public final class Theme {
             h("DDDDDD"), h("333333"),
             h("F8F8F8"), h("616161"), h("1F1F1F"), h("1F1F1F"),
             h("F3F3F3"), h("3B3B3B"), h("6F6F6F"), h("3B3B3B"),
-            h("E5E5E5"), h("0090F1"),
+            h("E5E5E5"), h("0090F1"), h("CCCCCC"),          // border, focus, divider
             h("FFFFFF"), h("3B3B3B"),
             h("6E7681"), h("171184"),
             h("F5F5F5"), h("EEEEEE"),
