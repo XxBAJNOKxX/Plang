@@ -211,6 +211,24 @@ public class FindBar extends JPanel {
       });
    }
 
+   /** Megjeleníti a sávot csere-módban. */
+   public void showBarWithReplace(String initial) {
+      replaceVisible = true;
+      replaceRow.setVisible(true);
+      showBar(initial);
+   }
+
+   public void setReplaceVisible(boolean b) {
+      replaceVisible = b;
+      replaceRow.setVisible(b);
+      revalidate();
+      repaint();
+   }
+
+   public boolean isReplaceVisible() {
+      return replaceVisible;
+   }
+
    public void hideBar() {
       setVisible(false);
       editor.clearSearch();

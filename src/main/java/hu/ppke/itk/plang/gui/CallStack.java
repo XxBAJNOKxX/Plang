@@ -68,6 +68,10 @@ final class CallStack extends AbstractListModel {
       this.maxSteps = steps;
    }
 
+   int getMaxSteps() {
+      return this.maxSteps;
+   }
+
    private class StackEntry {
       String expr;
       List<State> states;

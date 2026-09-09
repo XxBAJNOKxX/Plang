@@ -12,12 +12,13 @@ import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
+import java.awt.event.MouseWheelEvent;
+import java.awt.event.MouseWheelListener;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -28,6 +29,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.StringReader;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -38,22 +40,23 @@ import java.util.TreeMap;
 import javax.swing.AbstractAction;
 import javax.swing.Action;
 import javax.swing.BorderFactory;
-import javax.swing.Icon;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JMenu;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
-import javax.swing.JTextPane;
 import javax.swing.JTree;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.event.ListSelectionEvent;
@@ -86,30 +89,15 @@ import hu.ppke.itk.plang.prog.StreamKind;
 /**
  * A PLanG fejlesztőkörnyezet munkafelülete – Visual Studio Code ihletésű
  * elrendezéssel.
- *
- * Az elrendezés a VSC-t követi: bal szélen tevékenységsáv, mellette oldalsáv,
- * középen a fülekkel ellátott szerkesztő, jobbra a végrehajtás vizsgálata
- * (változók, kifejezésfa, hívási verem), alul a be-/kimeneti panel, legalul
- * pedig az állapotsor.
- *
- * A program eredeti működése változatlan: a Betölt / Ment / Értelmez /
- * Szerkeszt / Másol / Start / Stop / Belépés / Kilépés / Beállítások műveletek
- * ugyanazokat a modelleket hajtják, mint korábban.
  */
 public class Workbench extends JPanel {
 
    private static final long serialVersionUID = 1L;
 
-   /** A befoglaló ablak (lehet {@code null} – például teszteléskor). */
    private final JFrame owner;
-
-   /** A munkafelülethez tartozó menüsor. */
    private javax.swing.JMenuBar menuBar;
-
-   /** Kilépési kérés kezelője, amelyet a befoglaló ablak állít be. */
    private Runnable exitHandler;
 
-   /* ---- műveletek (az eredeti szemantikával) ---- */
    private JFileChooser fileChooser;
    private Action loadAction;
    private Action saveAction;
@@ -126,17 +114,21 @@ public class Workbench extends JPanel {
    private Action toggleThemeAction;
    private Action findAction;
    private Action helpAction;
+   private Action undoAction;
+   private Action redoAction;
+   private Action gotoLineAction;
+   private Action increaseFontAction;
+   private Action decreaseFontAction;
+   private Action replaceAction;
 
    private PrefDialog prefDialog;
 
-   /** A futtatás alapértelmezett lépéskorlátja (a beállításokban módosítható). */
    private static final int DEFAULT_STEPS = 10000;
 
    private ListSelectionListener selProgLine;
    private ListSelectionListener selProgState;
    private TreeSelectionListener selExprNode;
 
-   /* ---- modellt hordozó nézetek (az eredetivel megegyező típusok) ---- */
    private JList progList;
    private CodeEditor progText;
    private boolean progTextChanged;
@@ -150,13 +142,11 @@ public class Workbench extends JPanel {
    private JTable stateTable;
    private JTree exprTree;
 
-   /** A be- és kimeneti csatornákat tartalmazó lapozók. */
    private StreamTabs inpPanes;
    private StreamTabs outPanes;
 
    private Font textFont;
 
-   /* ---- VSC vázszerkezet ---- */
    private ActivityBar activityBar;
    private JPanel sideBar;
    private CardLayout sideCards;
@@ -186,15 +176,21 @@ public class Workbench extends JPanel {
    private File currentFile;
    private String lastSearch = "";
 
-   /** Az utolsó futtatás állapotlistájának mérete – az állapotsorhoz. */
    private int lastStepCount;
    private boolean running;
 
-   /* ================= az eredeti állapotátmenetek ================= */
+   /* ---- új mezők ---- */
+   private JMenu recentMenu;
+   private List<File> recentFiles = new ArrayList<File>();
+   private StatusBar.Cell msgCell;
+   private Timer msgClearTimer;
+
+   /* ================= állapotátmenetek ================= */
 
    private void editState() {
       this.loadAction.setEnabled(true);
       this.saveAction.setEnabled(true);
+      this.saveAsAction.setEnabled(true);
       this.parseAction.setEnabled(true);
       this.editAction.setEnabled(false);
       this.copyAction.setEnabled(false);
@@ -202,6 +198,7 @@ public class Workbench extends JPanel {
       this.progCards.show(this.progPanel, PROGTEXT);
       this.editorTabs.select("editor");
       updateStatus();
+      updateUndoRedo();
       SwingUtilities.invokeLater(new Runnable() {
          public void run() {
             progText.requestFocusInWindow();
@@ -212,6 +209,7 @@ public class Workbench extends JPanel {
    private void listState() {
       this.loadAction.setEnabled(false);
       this.saveAction.setEnabled(false);
+      this.saveAsAction.setEnabled(false);
       this.parseAction.setEnabled(false);
       this.editAction.setEnabled(true);
       this.progCards.show(this.progPanel, PROGLIST);
@@ -304,12 +302,23 @@ public class Workbench extends JPanel {
       super(new BorderLayout());
       this.owner = owner;
 
-      // a témát a hívó (belépési pont) állítja be – itt csak felhasználjuk
       Theme.installUIDefaults();
-      this.textFont = Theme.mono(Font.PLAIN, 13);
+
+      // betűtípus betöltése prefs-ből
+      try {
+         String fam = AppPrefs.getFontFamily();
+         int sz = AppPrefs.getFontSize();
+         this.textFont = new Font(fam, Font.PLAIN, sz);
+      } catch (Exception e) {
+         this.textFont = Theme.mono(Font.PLAIN, 13);
+      }
 
       this.fileChooser = new JFileChooser();
       this.fileChooser.addChoosableFileFilter(new PlangFilter(null));
+      this.fileChooser.setFileFilter(this.fileChooser.getChoosableFileFilters()[0]);
+
+      // recent files betöltése
+      loadRecentFiles();
 
       buildActions();
 
@@ -323,28 +332,61 @@ public class Workbench extends JPanel {
       applyThemeToAll();
       updateFont();
 
-      setPreferredSize(new Dimension(1440, 876));
+      int ww = 1440;
+      int wh = 876;
+      try {
+         ww = AppPrefs.getWindowWidth();
+         wh = AppPrefs.getWindowHeight();
+      } catch (Exception e) {}
+      setPreferredSize(new Dimension(ww, wh));
 
       SwingUtilities.invokeLater(new Runnable() {
          public void run() {
-            mainSplit.setDividerLocation(260);
-            centerSplit.setDividerLocation(0.62);
-            rightSplit.setDividerLocation(0.68);
-            inspectSplit.setDividerLocation(0.55);
-            consoleSplit.setDividerLocation(0.5);
+            // osztópanelek betöltése prefs-ből, ha van
+            int mainDiv = AppPrefs.getDividerMain();
+            int centerDiv = AppPrefs.getDividerCenter();
+            int rightDiv = AppPrefs.getDividerRight();
+            int inspectDiv = AppPrefs.getDividerInspect();
+            int consoleDiv = AppPrefs.getDividerConsole();
+
+            if (mainDiv > 0) {
+               mainSplit.setDividerLocation(mainDiv);
+            } else {
+               mainSplit.setDividerLocation(260);
+            }
+            if (centerDiv > 0) {
+               centerSplit.setDividerLocation(centerDiv);
+            } else {
+               centerSplit.setDividerLocation(0.62);
+            }
+            if (rightDiv > 0) {
+               rightSplit.setDividerLocation(rightDiv);
+            } else {
+               rightSplit.setDividerLocation(0.68);
+            }
+            if (inspectDiv > 0) {
+               inspectSplit.setDividerLocation(inspectDiv);
+            } else {
+               inspectSplit.setDividerLocation(0.55);
+            }
+            if (consoleDiv > 0) {
+               consoleSplit.setDividerLocation(consoleDiv);
+            } else {
+               consoleSplit.setDividerLocation(0.5);
+            }
          }
       });
 
       this.editState();
       updateStatus();
+      updateRecentMenu();
    }
 
    /* ------------------------- műveletek ------------------------- */
 
    private void buildActions() {
-      this.loadAction = new AbstractAction("Betölt") {
+      this.loadAction = new AbstractAction("Megnyitás…") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent ev) {
             if (!Workbench.this.progTextChanged
                 || JOptionPane.showConfirmDialog(Workbench.this,
@@ -358,32 +400,39 @@ public class Workbench extends JPanel {
          }
       };
 
-      this.saveAction = new AbstractAction("Ment") {
+      this.saveAction = new AbstractAction("Mentés") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent ev) {
-            if (Workbench.this.fileChooser.showSaveDialog(Workbench.this)
-                   == JFileChooser.APPROVE_OPTION
-                && (!Workbench.this.fileChooser.getSelectedFile().exists()
-                    || JOptionPane.showConfirmDialog(Workbench.this,
-                          "A fájl létezik, felülírjam?", "Létező fájl",
-                          JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == 0)) {
-               Workbench.this.saveFile(Workbench.this.fileChooser.getSelectedFile());
+            if (Workbench.this.currentFile != null) {
+               File target = ensurePlangExtension(Workbench.this.currentFile);
+               Workbench.this.saveFile(target);
+            } else {
+               saveAsAction.actionPerformed(ev);
             }
          }
       };
 
       this.saveAsAction = new AbstractAction("Mentés másként…") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent ev) {
-            saveAction.actionPerformed(ev);
+            if (Workbench.this.fileChooser.showSaveDialog(Workbench.this)
+                   == JFileChooser.APPROVE_OPTION) {
+               File chosen = Workbench.this.fileChooser.getSelectedFile();
+               File target = ensurePlangExtension(chosen);
+               if (target.exists()) {
+                  if (JOptionPane.showConfirmDialog(Workbench.this,
+                        "A fájl létezik, felülírjam?", "Létező fájl",
+                        JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) != 0) {
+                     return;
+                  }
+               }
+               Workbench.this.saveFile(target);
+            }
          }
       };
 
       this.newAction = new AbstractAction("Új program") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent ev) {
             if (Workbench.this.progTextChanged
                 && JOptionPane.showConfirmDialog(Workbench.this,
@@ -400,6 +449,7 @@ public class Workbench extends JPanel {
                + "  BE: x\n"
                + "  KI: x\n"
                + "PROGRAM_VÉGE\n");
+            Workbench.this.progText.discardUndoHistory();
             Workbench.this.progText.setCaretPosition(0);
             Workbench.this.progTextChanged = false;
             Workbench.this.currentFile = null;
@@ -408,12 +458,82 @@ public class Workbench extends JPanel {
             Workbench.this.setFrameTitle("PLanG");
             Workbench.this.editState();
             Workbench.this.refreshOutline();
+            Workbench.this.updateUndoRedo();
+         }
+      };
+
+      this.undoAction = new AbstractAction("Visszavonás") {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            Workbench.this.progText.undo();
+            Workbench.this.updateUndoRedo();
+            Workbench.this.updateStatus();
+         }
+      };
+
+      this.redoAction = new AbstractAction("Újra") {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            Workbench.this.progText.redo();
+            Workbench.this.updateUndoRedo();
+            Workbench.this.updateStatus();
+         }
+      };
+
+      this.gotoLineAction = new AbstractAction("Ugrás sorra…") {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            String input = JOptionPane.showInputDialog(Workbench.this,
+                  "Sor száma (1-" + progText.lineCount() + "):", "Ugrás sorra",
+                  JOptionPane.QUESTION_MESSAGE);
+            if (input != null) {
+               try {
+                  int line = Integer.parseInt(input.trim());
+                  if (line >= 1 && line <= progText.lineCount()) {
+                     progText.gotoLine(line - 1);
+                     progText.requestFocusInWindow();
+                  }
+               } catch (NumberFormatException ex) {
+                  // figyelmen kívül
+               }
+            }
+         }
+      };
+
+      this.increaseFontAction = new AbstractAction("Nagyítás") {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            Font f = textFont;
+            int newSize = Math.min(42, f.getSize() + 1);
+            if (newSize != f.getSize()) {
+               textFont = new Font(f.getFamily(), f.getStyle(), newSize);
+               updateFont();
+               AppPrefs.setFontFamily(textFont.getFamily());
+               AppPrefs.setFontSize(newSize);
+               AppPrefs.flush();
+               updateStatus();
+            }
+         }
+      };
+
+      this.decreaseFontAction = new AbstractAction("Kicsinyítés") {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            Font f = textFont;
+            int newSize = Math.max(8, f.getSize() - 1);
+            if (newSize != f.getSize()) {
+               textFont = new Font(f.getFamily(), f.getStyle(), newSize);
+               updateFont();
+               AppPrefs.setFontFamily(textFont.getFamily());
+               AppPrefs.setFontSize(newSize);
+               AppPrefs.flush();
+               updateStatus();
+            }
          }
       };
 
       this.parseAction = new AbstractAction("Értelmez") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent ev) {
             try {
                MainProgram prog = MainProgram.parseMainProgram(
@@ -445,7 +565,6 @@ public class Workbench extends JPanel {
 
       this.editAction = new AbstractAction("Szerkeszt") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent ev) {
             Workbench.this.editState();
          }
@@ -453,28 +572,27 @@ public class Workbench extends JPanel {
 
       this.copyAction = new AbstractAction("Másol") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent ev) {
             ProgramList lst = (ProgramList) Workbench.this.progList.getModel();
             StringBuffer sb = new StringBuffer();
             for (int i = 0; i < lst.getSize(); ++i) {
-               // A ProgLineRenderer.stripHtml a jelöléseket és az
-               // entitásokat is helyesen kezeli, ezért itt is azt
-               // használjuk – így a "<" és ">" operátorok megmaradnak.
                sb.append(ProgLineRenderer.stripHtml(lst.getElementAt(i).toString())[0])
                  .append("\n");
             }
             Workbench.this.progText.setText(sb.toString());
+            Workbench.this.progText.discardUndoHistory();
             Workbench.this.progText.setCaretPosition(0);
+            Workbench.this.progTextChanged = false;
+            Workbench.this.editorTabs.setDirty("editor", true);
             Workbench.this.editState();
             Workbench.this.refreshOutline();
             Workbench.this.updateStatus();
+            Workbench.this.updateUndoRedo();
          }
       };
 
       this.runAction = new AbstractAction("Start") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent ev) {
             MainProgram prog = ((ProgramList) Workbench.this.progList.getModel()).getProgram();
             if (prog != null && !prog.hasError()) {
@@ -530,7 +648,6 @@ public class Workbench extends JPanel {
 
       this.stopAction = new AbstractAction("Stop") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent e) {
             CallStack cs = (CallStack) Workbench.this.callStack.getModel();
             cs.runProgram(null, null, null);
@@ -544,7 +661,6 @@ public class Workbench extends JPanel {
 
       this.enterAction = new AbstractAction("Belépés") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent e) {
             TreePath path = Workbench.this.exprTree.getSelectionPath();
             if (path == null) {
@@ -562,7 +678,6 @@ public class Workbench extends JPanel {
 
       this.leaveAction = new AbstractAction("Kilépés") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent e) {
             ((CallStack) Workbench.this.callStack.getModel()).leave();
             if (Workbench.this.callStack.getModel().getSize() <= 1) {
@@ -574,41 +689,51 @@ public class Workbench extends JPanel {
 
       this.showPreferences = new AbstractAction("Beállítások") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent e) {
-            if (Workbench.this.prefs().showDlg()) {
-               Workbench.this.textFont = Workbench.this.prefs().getTextFont();
-               Workbench.this.progText.setShowIndentGuides(
-                  Workbench.this.prefs().isShowIndentGuides());
+            // prefs dialog értékeinek szinkronizálása aktuális állapottal
+            PrefDialog pd = Workbench.this.prefs();
+            pd.setValues(Workbench.this.textFont,
+                         ((CallStack) Workbench.this.callStack.getModel()).getMaxSteps(),
+                         Theme.mode(),
+                         Workbench.this.progText.isShowIndentGuides());
+            if (pd.showDlg()) {
+               Workbench.this.textFont = pd.getTextFont();
+               Workbench.this.progText.setShowIndentGuides(pd.isShowIndentGuides());
                Workbench.this.updateFont();
                ((CallStack) Workbench.this.callStack.getModel())
-                  .setMaxSteps(Workbench.this.prefs().getStepNum());
-               if (Workbench.this.prefs().getThemeMode() != Theme.mode()) {
-                  Theme.setMode(Workbench.this.prefs().getThemeMode());
+                  .setMaxSteps(pd.getStepNum());
+               if (pd.getThemeMode() != Theme.mode()) {
+                  Theme.setMode(pd.getThemeMode());
                   Workbench.this.applyThemeToAll();
                }
                Workbench.this.updateStatus();
+               // mentés prefs-be
+               AppPrefs.setFontFamily(pd.getFontFamily());
+               AppPrefs.setFontSize(pd.getFontSizeValue());
+               AppPrefs.setStepNum(pd.getStepNum());
+               AppPrefs.setThemeMode(pd.getThemeMode());
+               AppPrefs.setIndentGuides(pd.isShowIndentGuides());
+               AppPrefs.flush();
             }
          }
       };
 
       this.toggleThemeAction = new AbstractAction("Téma váltása") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent e) {
             Theme.toggleMode();
             if (Workbench.this.prefDialog != null) {
-               // csak akkor szinkronizálunk, ha a párbeszédablak már létezik
                Workbench.this.prefDialog.setThemeMode(Theme.mode());
             }
             Workbench.this.applyThemeToAll();
             Workbench.this.updateStatus();
+            AppPrefs.setThemeMode(Theme.mode());
+            AppPrefs.flush();
          }
       };
 
       this.findAction = new AbstractAction("Keresés") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent e) {
             Workbench.this.progCards.show(Workbench.this.progPanel, PROGTEXT);
             Workbench.this.editorTabs.select("editor");
@@ -616,16 +741,25 @@ public class Workbench extends JPanel {
          }
       };
 
+      this.replaceAction = new AbstractAction("Csere") {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            Workbench.this.progCards.show(Workbench.this.progPanel, PROGTEXT);
+            Workbench.this.editorTabs.select("editor");
+            Workbench.this.findBar.showBarWithReplace(Workbench.this.progText.getSelectedText());
+         }
+      };
+
       this.helpAction = new AbstractAction("Súgó") {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent e) {
             showHelp();
          }
       };
 
       this.loadAction.putValue(Action.SHORT_DESCRIPTION, "Betöltés  (Ctrl+O)");
-      this.saveAction.putValue(Action.SHORT_DESCRIPTION, "Kimentés  (Ctrl+S)");
+      this.saveAction.putValue(Action.SHORT_DESCRIPTION, "Mentés  (Ctrl+S)");
+      this.saveAsAction.putValue(Action.SHORT_DESCRIPTION, "Mentés másként  (Ctrl+Shift+S)");
       this.newAction.putValue(Action.SHORT_DESCRIPTION, "Új program  (Ctrl+N)");
       this.parseAction.putValue(Action.SHORT_DESCRIPTION, "Programszöveg értelmezése  (Ctrl+B)");
       this.editAction.putValue(Action.SHORT_DESCRIPTION, "Szerkesztés");
@@ -640,13 +774,18 @@ public class Workbench extends JPanel {
       this.showPreferences.putValue(Action.SHORT_DESCRIPTION, "Beállítások  (Ctrl+,)");
       this.toggleThemeAction.putValue(Action.SHORT_DESCRIPTION, "Világos / sötét téma");
       this.findAction.putValue(Action.SHORT_DESCRIPTION, "Keresés  (Ctrl+F)");
+      this.replaceAction.putValue(Action.SHORT_DESCRIPTION, "Csere  (Ctrl+H)");
       this.helpAction.putValue(Action.SHORT_DESCRIPTION, "Nyelvi súgó  (F1)");
+      this.undoAction.putValue(Action.SHORT_DESCRIPTION, "Visszavonás  (Ctrl+Z)");
+      this.redoAction.putValue(Action.SHORT_DESCRIPTION, "Újra  (Ctrl+Y)");
+      this.gotoLineAction.putValue(Action.SHORT_DESCRIPTION, "Ugrás sorra  (Ctrl+G)");
+      this.increaseFontAction.putValue(Action.SHORT_DESCRIPTION, "Nagyítás  (Ctrl++)");
+      this.decreaseFontAction.putValue(Action.SHORT_DESCRIPTION, "Kicsinyítés  (Ctrl+-)");
    }
 
    /* ------------------------ komponensek ------------------------ */
 
    private void buildComponents() {
-      /* --- értelmezett program listája --- */
       this.progRenderer = new ProgLineRenderer(this.textFont);
       this.progList = new JList(new ProgramList());
       this.progList.setCellRenderer(this.progRenderer);
@@ -654,27 +793,21 @@ public class Workbench extends JPanel {
       this.progList.setBackground(Theme.p().editorBg);
       this.progList.setFixedCellHeight(20);
 
-      /* --- szerkesztő --- */
       this.progText = new CodeEditor();
       this.progText.setEditorFont(this.textFont);
+      try {
+         this.progText.setShowIndentGuides(AppPrefs.getIndentGuides());
+      } catch (Exception e) {}
       this.progText.getDocument().addDocumentListener(new DocumentListener() {
-         public void changedUpdate(DocumentEvent e) {
-            markChanged();
-         }
-
-         public void insertUpdate(DocumentEvent e) {
-            markChanged();
-         }
-
-         public void removeUpdate(DocumentEvent e) {
-            markChanged();
-         }
-
+         public void changedUpdate(DocumentEvent e) { markChanged(); }
+         public void insertUpdate(DocumentEvent e) { markChanged(); }
+         public void removeUpdate(DocumentEvent e) { markChanged(); }
          private void markChanged() {
             Workbench.this.progTextChanged = true;
             Workbench.this.editorTabs.setDirty("editor", true);
             Workbench.this.refreshOutline();
             Workbench.this.updateStatus();
+            Workbench.this.updateUndoRedo();
          }
       });
       this.progText.addCaretListener(new javax.swing.event.CaretListener() {
@@ -683,7 +816,20 @@ public class Workbench extends JPanel {
          }
       });
 
-      /* --- kifejezésfa --- */
+      // Ctrl+egérgörgő betűméret
+      this.progText.addMouseWheelListener(new MouseWheelListener() {
+         public void mouseWheelMoved(MouseWheelEvent e) {
+            if (e.isControlDown()) {
+               e.consume();
+               if (e.getWheelRotation() < 0) {
+                  increaseFontAction.actionPerformed(null);
+               } else {
+                  decreaseFontAction.actionPerformed(null);
+               }
+            }
+         }
+      });
+
       this.exprRenderer = new ExprRenderer(this.textFont);
       this.exprTree = new JTree(new ExprTree());
       this.exprTree.setCellRenderer(this.exprRenderer);
@@ -693,7 +839,6 @@ public class Workbench extends JPanel {
       this.exprTree.getSelectionModel().setSelectionMode(
          javax.swing.tree.TreeSelectionModel.SINGLE_TREE_SELECTION);
 
-      /* --- változótábla --- */
       this.stateTable = new JTable(new StateList());
       this.stateRenderer = new StateCellRenderer(this.textFont);
       this.stateTable.setDefaultRenderer(Object.class, this.stateRenderer);
@@ -708,18 +853,15 @@ public class Workbench extends JPanel {
       th.setDefaultRenderer(new HeaderRenderer());
       th.setPreferredSize(new Dimension(10, 26));
 
-      /* --- hívási verem --- */
       this.callStack = new JList(new CallStack((StateList) this.stateTable.getModel(),
-                                               DEFAULT_STEPS));
+                                               AppPrefs.getStepNum()));
       this.callStack.setBackground(Theme.p().panelBg);
       this.callStack.setCellRenderer(new CallStackRenderer());
       this.callStack.setFixedCellHeight(22);
 
-      /* --- csatornák --- */
       this.inpPanes = new StreamTabs(StreamKind.INPUT);
       this.outPanes = new StreamTabs(StreamKind.OUTPUT);
 
-      /* --- figyelők (az eredeti logikával) --- */
       this.selProgLine = new ListSelectionListener() {
          public void valueChanged(ListSelectionEvent ev) {
             if (!ev.getValueIsAdjusting()) {
@@ -793,7 +935,6 @@ public class Workbench extends JPanel {
          }
       });
 
-      /* --- kiemelt sorra ugrás az értelmezett listából --- */
       this.progList.addMouseListener(new MouseAdapter() {
          public void mouseClicked(MouseEvent e) {
             if (e.getClickCount() >= 2) {
@@ -813,17 +954,12 @@ public class Workbench extends JPanel {
       JPanel root = new JPanel(new BorderLayout());
       root.setBackground(Theme.p().editorBg);
 
-      /* ---------- tevékenységsáv ---------- */
       activityBar = new ActivityBar();
       activityBar.addView(VSIcons.FILES, "Kezelő  (Ctrl+Shift+E)", new Runnable() {
-         public void run() {
-            sideCards.show(sideBar, "explorer");
-         }
+         public void run() { sideCards.show(sideBar, "explorer"); }
       });
       activityBar.addView(VSIcons.RUN, "Futtatás és hibakeresés  (Ctrl+Shift+D)", new Runnable() {
-         public void run() {
-            sideCards.show(sideBar, "run");
-         }
+         public void run() { sideCards.show(sideBar, "run"); }
       });
       activityBar.addView(VSIcons.SEARCH, "Keresés  (Ctrl+Shift+F)", new Runnable() {
          public void run() {
@@ -832,17 +968,12 @@ public class Workbench extends JPanel {
          }
       });
       activityBar.addBottomAction(VSIcons.THEME, "Világos / sötét téma", new Runnable() {
-         public void run() {
-            toggleThemeAction.actionPerformed(null);
-         }
+         public void run() { toggleThemeAction.actionPerformed(null); }
       });
       activityBar.addBottomAction(VSIcons.SETTINGS, "Beállítások  (Ctrl+,)", new Runnable() {
-         public void run() {
-            showPreferences.actionPerformed(null);
-         }
+         public void run() { showPreferences.actionPerformed(null); }
       });
 
-      /* ---------- oldalsáv ---------- */
       sideCards = new CardLayout();
       sideBar = new JPanel(sideCards);
       sideBar.setBackground(Theme.p().sideBar);
@@ -850,7 +981,6 @@ public class Workbench extends JPanel {
       sideBar.add(buildRunPanel(), "run");
       sideBar.add(buildSearchPanel(), "search");
 
-      /* ---------- szerkesztő terület ---------- */
       editorTabs = new EditorTabBar();
       editorTabs.addTab(new EditorTabBar.Tab("editor", "névtelen.plang", VSIcons.NEW, false));
       editorTabs.addTab(new EditorTabBar.Tab("parsed", "Értelmezett program", VSIcons.PARSE, false));
@@ -867,16 +997,13 @@ public class Workbench extends JPanel {
             }
             updateStatus();
          }
-
-         public void tabClosed(String id) {
-         }
+         public void tabClosed(String id) {}
       });
 
       progCards = new CardLayout();
       progPanel = new JPanel(progCards);
       progPanel.setBackground(Theme.p().editorBg);
 
-      // szerkesztő + sorszámsáv
       gutter = new LineNumberGutter(progText);
       gutter.setFont(textFont);
       JPanel editorWrap = new JPanel(new BorderLayout());
@@ -886,6 +1013,18 @@ public class Workbench extends JPanel {
       editorScroll.setRowHeaderView(gutter);
       editorScroll.getRowHeader().setBackground(Theme.p().editorBg);
       FlatScrollBarUI.install(editorScroll);
+      editorScroll.addMouseWheelListener(new MouseWheelListener() {
+         public void mouseWheelMoved(MouseWheelEvent e) {
+            if (e.isControlDown()) {
+               e.consume();
+               if (e.getWheelRotation() < 0) {
+                  increaseFontAction.actionPerformed(null);
+               } else {
+                  decreaseFontAction.actionPerformed(null);
+               }
+            }
+         }
+      });
 
       JPanel editorHolder = new JPanel(new BorderLayout());
       editorHolder.setBackground(Theme.p().editorBg);
@@ -905,7 +1044,6 @@ public class Workbench extends JPanel {
       editorArea.add(editorTabs, BorderLayout.NORTH);
       editorArea.add(progPanel, BorderLayout.CENTER);
 
-      /* ---------- alsó panel: be- és kimenet ---------- */
       consoleSplit = new FlatSplitPane(JSplitPane.HORIZONTAL_SPLIT,
                                        wrapStreamPanel(inpPanes, "Bemenet", VSIcons.INPUT),
                                        wrapStreamPanel(outPanes, "Kimenet", VSIcons.OUTPUT));
@@ -914,13 +1052,10 @@ public class Workbench extends JPanel {
       centerSplit = new FlatSplitPane(JSplitPane.VERTICAL_SPLIT, editorArea, consoleSplit);
       centerSplit.setResizeWeight(0.65);
 
-      /* ---------- jobb oldali vizsgálópanel ---------- */
       JPanel varsPanel = new JPanel(new BorderLayout());
       varsPanel.setBackground(Theme.p().panelBg);
       varsHeader = new PanelHeader("Változók", VSIcons.VARIABLES, Theme.p().synType);
       JScrollPane tableScrl = new JScrollPane(stateTable);
-      // a fejlécet kifejezetten beállítjuk, hogy a megjelenítés ne függjön
-      // a komponens-hierarchia felépítésének sorrendjétől
       tableScrl.setColumnHeaderView(stateTable.getTableHeader());
       FlatScrollBarUI.install(tableScrl);
       tableScrl.getViewport().setBackground(Theme.p().panelBg);
@@ -950,7 +1085,6 @@ public class Workbench extends JPanel {
       inspectSplit = new FlatSplitPane(JSplitPane.VERTICAL_SPLIT, varsPanel, exprPanel);
       inspectSplit.setResizeWeight(0.55);
 
-      // hívási verem (csak az alprogram-üzemmódban látszik, mint eredetileg)
       callStackBox = new JPanel(new BorderLayout());
       callStackBox.setBackground(Theme.p().panelBg);
       stackHeader = new PanelHeader("Hívási verem", VSIcons.CALLSTACK, Theme.p().synControl);
@@ -963,8 +1097,6 @@ public class Workbench extends JPanel {
 
       JPanel inspector = new JPanel(new BorderLayout());
       inspector.setBackground(Theme.p().panelBg);
-      // A hívási verem – az eredeti viselkedéssel egyezően – csak akkor
-      // látszik, ha az alprogram-üzemmód be van kapcsolva.
       callStackBox.setVisible(subProgramsEnabled());
       inspector.add(callStackBox, BorderLayout.NORTH);
       inspector.add(inspectSplit, BorderLayout.CENTER);
@@ -980,7 +1112,6 @@ public class Workbench extends JPanel {
       body.add(activityBar, BorderLayout.WEST);
       body.add(mainSplit, BorderLayout.CENTER);
 
-      /* ---------- állapotsor ---------- */
       statusBar = new StatusBar();
       StatusBar.Cell run = statusBar.add("run", "Futtatás", false);
       run.iconType = VSIcons.PLAY;
@@ -999,6 +1130,8 @@ public class Workbench extends JPanel {
       diag.tooltip = "Fordítási hibák";
       StatusBar.Cell steps = statusBar.add("steps", "", false);
       steps.tooltip = "Végrehajtott lépések";
+      msgCell = statusBar.add("msg", "", false);
+      msgCell.tooltip = "Üzenet";
 
       StatusBar.Cell pos = statusBar.add("pos", "Sor 1, Oszlop 1", true);
       pos.tooltip = "A kurzor helye";
@@ -1009,9 +1142,7 @@ public class Workbench extends JPanel {
       StatusBar.Cell theme = statusBar.add("theme", "Sötét téma", true);
       theme.tooltip = "Téma váltása";
       theme.action = new Runnable() {
-         public void run() {
-            toggleThemeAction.actionPerformed(null);
-         }
+         public void run() { toggleThemeAction.actionPerformed(null); }
       };
 
       root.add(body, BorderLayout.CENTER);
@@ -1020,32 +1151,148 @@ public class Workbench extends JPanel {
       add(root, BorderLayout.CENTER);
    }
 
-   /** A munkafelület menüsora – a befoglaló ablak teszi ki. */
-   public javax.swing.JMenuBar getMenuBar() {
-      return menuBar;
-   }
-
-   /** Beállítja a kilépési kérés kezelőjét. */
-   public void setExitHandler(Runnable r) {
-      this.exitHandler = r;
-   }
-
-   /** Igaz, ha a programszöveg mentetlen módosítást tartalmaz. */
-   public boolean hasUnsavedChanges() {
-      return progTextChanged;
-   }
+   public javax.swing.JMenuBar getMenuBar() { return menuBar; }
+   public void setExitHandler(Runnable r) { this.exitHandler = r; }
+   public boolean hasUnsavedChanges() { return progTextChanged; }
+   public File getCurrentFile() { return currentFile; }
 
    private void setFrameTitle(String t) {
-      if (owner != null) {
-         owner.setTitle(t);
+      if (owner != null) { owner.setTitle(t); }
+   }
+
+   /* ---- .plang kiterjesztés ---- */
+   private File ensurePlangExtension(File f) {
+      if (f == null) return null;
+      String name = f.getName();
+      int dot = name.lastIndexOf('.');
+      if (dot < 0) {
+         return new File(f.getParentFile(), name + ".plang");
+      }
+      if (dot == name.length() - 1) {
+         return new File(f.getParentFile(), name + "plang");
+      }
+      // ha nincs kiterjesztésnek tekinthető rész (pl. nincs pont), már kezeltük
+      // ha van pont, de a kiterjesztés üres, szintén hozzáadjuk – egyébként marad
+      return f;
+   }
+
+   /* ---- mentés visszajelzés ---- */
+   private void showSaveFeedback(String fileName) {
+      if (statusBar == null || msgCell == null) return;
+      statusBar.setText("msg", "Mentve: " + fileName);
+      if (msgClearTimer != null) {
+         msgClearTimer.stop();
+      }
+      msgClearTimer = new Timer(3500, new ActionListener() {
+         public void actionPerformed(ActionEvent e) {
+            statusBar.setText("msg", "");
+         }
+      });
+      msgClearTimer.setRepeats(false);
+      msgClearTimer.start();
+   }
+
+   /* ---- legutóbbi fájlok ---- */
+   private void loadRecentFiles() {
+      try {
+         recentFiles = AppPrefs.getRecentFiles();
+         if (recentFiles == null) recentFiles = new ArrayList<File>();
+      } catch (Exception e) {
+         recentFiles = new ArrayList<File>();
       }
    }
 
+   private void saveRecentFiles() {
+      try {
+         AppPrefs.setRecentFiles(recentFiles);
+         AppPrefs.flush();
+      } catch (Exception e) {}
+   }
+
+   private void addRecentFile(File f) {
+      if (f == null) return;
+      File abs = f.getAbsoluteFile();
+      Iterator<File> it = recentFiles.iterator();
+      while (it.hasNext()) {
+         File ex = it.next();
+         if (ex.getAbsolutePath().equals(abs.getAbsolutePath())) {
+            it.remove();
+         }
+      }
+      recentFiles.add(0, abs);
+      while (recentFiles.size() > 8) {
+         recentFiles.remove(recentFiles.size() - 1);
+      }
+      saveRecentFiles();
+      updateRecentMenu();
+   }
+
+   private void updateRecentMenu() {
+      if (recentMenu == null) return;
+      recentMenu.removeAll();
+      if (recentFiles.isEmpty()) {
+         JMenuItem empty = new JMenuItem("(nincs legutóbbi fájl)");
+         empty.setEnabled(false);
+         recentMenu.add(empty);
+      } else {
+         for (int i = 0; i < recentFiles.size(); i++) {
+            final File file = recentFiles.get(i);
+            JMenuItem item = new JMenuItem((i + 1) + ". " + file.getName());
+            item.setToolTipText(file.getAbsolutePath());
+            item.addActionListener(new ActionListener() {
+               public void actionPerformed(ActionEvent e) {
+                  if (!file.exists()) {
+                     JOptionPane.showMessageDialog(Workbench.this,
+                        "A fájl már nem létezik: " + file.getAbsolutePath(),
+                        "Hiba", JOptionPane.ERROR_MESSAGE);
+                     recentFiles.remove(file);
+                     saveRecentFiles();
+                     updateRecentMenu();
+                     return;
+                  }
+                  if (!progTextChanged
+                      || JOptionPane.showConfirmDialog(Workbench.this,
+                            "A programszöveg változásai nincsenek elmentve. Biztosan be akarsz tölteni egy új fájlt?",
+                            "Betöltés", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == 0) {
+                     loadFile(file);
+                  }
+               }
+            });
+            recentMenu.add(item);
+         }
+         recentMenu.addSeparator();
+         JMenuItem clear = new JMenuItem("Lista törlése");
+         clear.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+               recentFiles.clear();
+               saveRecentFiles();
+               updateRecentMenu();
+            }
+         });
+         recentMenu.add(clear);
+      }
+   }
+
+   private void updateUndoRedo() {
+      if (progText == null) return;
+      boolean canUndo = progText.getUndoManager().canUndo();
+      boolean canRedo = progText.getUndoManager().canRedo();
+      if (undoAction != null) undoAction.setEnabled(canUndo);
+      if (redoAction != null) redoAction.setEnabled(canRedo);
+   }
+
+   /* ---- fájlműveletek ---- */
+
    /**
-    * Betölti a megadott fájlt a szerkesztőbe. A kódolás – az eredeti
-    * viselkedéssel egyezően – ISO-8859-2.
+    * Betölti a megadott fájlt a szerkesztőbe.
+    * Publikus, hogy parancssorból és tesztekből is hívható legyen.
     */
+   public void openFile(File f) {
+      loadFile(f);
+   }
+
    private void loadFile(File f) {
+      if (f == null) return;
       BufferedReader rd = null;
       try {
          rd = new BufferedReader(new InputStreamReader(new FileInputStream(f), "ISO-8859-2"));
@@ -1054,6 +1301,7 @@ public class Workbench extends JPanel {
             sb.append(line).append("\n");
          }
          this.progText.setText(sb.toString());
+         this.progText.discardUndoHistory();
          this.progText.setCaretPosition(0);
          this.progTextChanged = false;
          this.currentFile = f;
@@ -1064,6 +1312,8 @@ public class Workbench extends JPanel {
          this.editorTabs.select("editor");
          this.refreshOutline();
          this.updateStatus();
+         this.updateUndoRedo();
+         this.addRecentFile(f);
       } catch (FileNotFoundException e) {
          JOptionPane.showMessageDialog(this,
             "Nem sikerült az olvasás a következö fájlból: " + e.getMessage(),
@@ -1076,28 +1326,27 @@ public class Workbench extends JPanel {
          System.err.println(e.getMessage());
       } finally {
          if (rd != null) {
-            try {
-               rd.close();
-            } catch (IOException e) {
-               // nem lényeges
-            }
+            try { rd.close(); } catch (IOException e) {}
          }
       }
    }
 
-   /** A szerkesztő tartalmát ISO-8859-2 kódolással a megadott fájlba írja. */
    private void saveFile(File f) {
+      if (f == null) return;
+      File target = ensurePlangExtension(f);
       try {
          PrintWriter wr = new PrintWriter(
-            new OutputStreamWriter(new FileOutputStream(f), "ISO-8859-2"));
+            new OutputStreamWriter(new FileOutputStream(target), "ISO-8859-2"));
          wr.print(this.progText.getText());
          wr.close();
          this.progTextChanged = false;
-         this.currentFile = f;
-         this.editorTabs.setTitle("editor", f.getName());
+         this.currentFile = target;
+         this.editorTabs.setTitle("editor", target.getName());
          this.editorTabs.setDirty("editor", false);
-         this.setFrameTitle(f.getName() + " – PLanG");
+         this.setFrameTitle(target.getName() + " – PLanG");
          this.updateStatus();
+         this.addRecentFile(target);
+         this.showSaveFeedback(target.getName());
       } catch (IOException e) {
          JOptionPane.showMessageDialog(this,
             "Nem sikerült a mentés a következő fájlba: " + e.getMessage(),
@@ -1106,8 +1355,31 @@ public class Workbench extends JPanel {
       }
    }
 
-   /** A beállítások párbeszédablaka – csak az első használatkor jön létre. */
-   /** A gyorsbillentyűk módosítóbillentyűje (fej nélküli módban is működik). */
+   public void savePrefs() {
+      try {
+         if (textFont != null) {
+            AppPrefs.setFontFamily(textFont.getFamily());
+            AppPrefs.setFontSize(textFont.getSize());
+         }
+         if (callStack != null && callStack.getModel() instanceof CallStack) {
+            AppPrefs.setStepNum(((CallStack) callStack.getModel()).getMaxSteps());
+         }
+         AppPrefs.setThemeMode(Theme.mode());
+         if (progText != null) {
+            AppPrefs.setIndentGuides(progText.isShowIndentGuides());
+         }
+         int mainDiv = -1, centerDiv = -1, rightDiv = -1, inspectDiv = -1, consoleDiv = -1;
+         if (mainSplit != null) mainDiv = mainSplit.getDividerLocation();
+         if (centerSplit != null) centerDiv = centerSplit.getDividerLocation();
+         if (rightSplit != null) rightDiv = rightSplit.getDividerLocation();
+         if (inspectSplit != null) inspectDiv = inspectSplit.getDividerLocation();
+         if (consoleSplit != null) consoleDiv = consoleSplit.getDividerLocation();
+         AppPrefs.setDividers(mainDiv, centerDiv, rightDiv, inspectDiv, consoleDiv);
+         AppPrefs.setRecentFiles(recentFiles);
+         AppPrefs.flush();
+      } catch (Exception e) {}
+   }
+
    private static int shortcutMask() {
       try {
          return Toolkit.getDefaultToolkit().getMenuShortcutKeyMask();
@@ -1127,67 +1399,53 @@ public class Workbench extends JPanel {
       return "on".equals(System.getProperty("hu.ppke.itk.plang.subprograms"));
    }
 
-   /** Oldalsáv: kezelő nézet – műveletek és programvázlat. */
    private JPanel buildExplorerPanel() {
       JPanel p = new JPanel(new BorderLayout());
       p.setBackground(Theme.p().sideBar);
-
       PanelHeader head = new PanelHeader("Kezelő");
       explorerHeader = head;
-
       JPanel content = new JPanel(new BorderLayout());
       content.setBackground(Theme.p().sideBar);
-
-      // gyors műveletek
       JPanel actions = new JPanel(new GridLayout(0, 1, 0, 4));
       actions.setBackground(Theme.p().sideBar);
       actions.setBorder(BorderFactory.createEmptyBorder(8, 10, 10, 10));
       actions.add(sideButton(newAction, VSIcons.NEW, "Új program"));
       actions.add(sideButton(loadAction, VSIcons.OPEN, "Megnyitás…"));
       actions.add(sideButton(saveAction, VSIcons.SAVE, "Mentés…"));
-
       PanelHeader outlineHead = new PanelHeader("Vázlat", VSIcons.TREE, null);
       outline = new OutlineList();
       JScrollPane osc = new JScrollPane(outline);
       FlatScrollBarUI.install(osc);
       osc.getViewport().setBackground(Theme.p().sideBar);
-
       outlinePanel = new JPanel(new BorderLayout());
       outlinePanel.setBackground(Theme.p().sideBar);
       outlinePanel.add(outlineHead, BorderLayout.NORTH);
       outlinePanel.add(osc, BorderLayout.CENTER);
-
       content.add(actions, BorderLayout.NORTH);
       content.add(outlinePanel, BorderLayout.CENTER);
-
       p.add(head, BorderLayout.NORTH);
       p.add(content, BorderLayout.CENTER);
       return p;
    }
 
-   /** Oldalsáv: futtatás és hibakeresés nézet. */
    private JPanel buildRunPanel() {
       JPanel p = new JPanel(new BorderLayout());
       p.setBackground(Theme.p().sideBar);
       p.add(new PanelHeader("Futtatás és hibakeresés"), BorderLayout.NORTH);
-
       JPanel content = new JPanel();
       content.setLayout(new javax.swing.BoxLayout(content, javax.swing.BoxLayout.Y_AXIS));
       content.setBackground(Theme.p().sideBar);
       content.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
       FlatButton runBig = new FlatButton(FlatButton.PRIMARY, "Program futtatása");
       runBig.setIcon(VSIcons.icon(VSIcons.PLAY, 15, Theme.p().buttonFg));
       runBig.setAction(runAction);
       runBig.setPadding(12, 7);
       runBig.setAlignmentX(Component.LEFT_ALIGNMENT);
       runBig.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
-
       FlatButton parseBtn = sideButton(parseAction, VSIcons.PARSE, "Értelmezés");
       FlatButton stopBtn = sideButton(stopAction, VSIcons.STOP, "Futtatás vége");
       FlatButton editBtn = sideButton(editAction, VSIcons.EDIT, "Szerkesztés");
       FlatButton copyBtn = sideButton(copyAction, VSIcons.COPY, "Értelmezett átmásolása");
-
       content.add(runBig);
       content.add(javax.swing.Box.createVerticalStrut(8));
       content.add(parseBtn);
@@ -1197,49 +1455,39 @@ public class Workbench extends JPanel {
       content.add(editBtn);
       content.add(javax.swing.Box.createVerticalStrut(4));
       content.add(copyBtn);
-
       if (subProgramsEnabled()) {
          content.add(javax.swing.Box.createVerticalStrut(12));
          content.add(sideButton(enterAction, VSIcons.STEP_INTO, "Belépés alprogramba"));
          content.add(javax.swing.Box.createVerticalStrut(4));
          content.add(sideButton(leaveAction, VSIcons.STEP_OUT, "Alprogram elhagyása"));
       }
-
       content.add(javax.swing.Box.createVerticalGlue());
-
       JPanel wrap = new JPanel(new BorderLayout());
       wrap.setBackground(Theme.p().sideBar);
       wrap.add(content, BorderLayout.NORTH);
-
       p.add(wrap, BorderLayout.CENTER);
       return p;
    }
 
-   /** Oldalsáv: keresés nézet. */
    private JPanel buildSearchPanel() {
       JPanel p = new JPanel(new BorderLayout());
       p.setBackground(Theme.p().sideBar);
       p.add(new PanelHeader("Keresés"), BorderLayout.NORTH);
-
       JPanel content = new JPanel(new BorderLayout());
       content.setBackground(Theme.p().sideBar);
       content.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
       JLabel hint = new JLabel("<html><body style='width:170px'>"
          + "A kereséshez nyomd meg a <b>Ctrl+F</b> billentyűt, "
          + "vagy használd a szerkesztő fölött megjelenő keresősávot.</body></html>");
       hint.setForeground(Theme.p().sideBarFg);
       hint.setFont(Theme.uiPlain());
-
       FlatButton open = new FlatButton(FlatButton.SECONDARY, "Keresősáv megnyitása");
       open.setIcon(VSIcons.icon(VSIcons.SEARCH, 14, Theme.p().buttonSecondaryFg));
       open.setAction(findAction);
-
       JPanel box = new JPanel(new BorderLayout(0, 10));
       box.setBackground(Theme.p().sideBar);
       box.add(hint, BorderLayout.NORTH);
       box.add(open, BorderLayout.CENTER);
-
       content.add(box, BorderLayout.NORTH);
       p.add(content, BorderLayout.CENTER);
       return p;
@@ -1273,33 +1521,48 @@ public class Workbench extends JPanel {
       mb.setBackground(Theme.p().titleBar);
       mb.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.p().border));
 
-      javax.swing.JMenu file = new javax.swing.JMenu("Fájl");
+      JMenu file = new JMenu("Fájl");
       file.add(menuItem(newAction, KeyEvent.VK_N));
       file.add(menuItem(loadAction, KeyEvent.VK_O));
       file.add(menuItem(saveAction, KeyEvent.VK_S));
+      JMenuItem saveAsItem = menuItem(saveAsAction, 0);
+      saveAsItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S,
+            shortcutMask() | InputEvent.SHIFT_DOWN_MASK));
+      file.add(saveAsItem);
+      recentMenu = new JMenu("Legutóbbi fájlok");
+      file.add(recentMenu);
       file.addSeparator();
-      javax.swing.JMenuItem exit = new javax.swing.JMenuItem("Kilépés");
-      exit.addActionListener(new java.awt.event.ActionListener() {
+      JMenuItem exit = new JMenuItem("Kilépés");
+      exit.addActionListener(new ActionListener() {
          public void actionPerformed(ActionEvent e) {
-            if (exitHandler != null) {
-               exitHandler.run();
-            }
+            if (exitHandler != null) exitHandler.run();
          }
       });
       file.add(exit);
 
-      javax.swing.JMenu edit = new javax.swing.JMenu("Szerkesztés");
-      edit.add(menuItem(findAction, KeyEvent.VK_F));
+      JMenu edit = new JMenu("Szerkesztés");
+      edit.add(menuItem(undoAction, KeyEvent.VK_Z));
+      JMenuItem redoItem = menuItem(redoAction, KeyEvent.VK_Y);
+      // Ctrl+Shift+Z is is redo
+      edit.add(redoItem);
       edit.addSeparator();
-      javax.swing.JMenuItem comment = new javax.swing.JMenuItem("Megjegyzés ki/be   Ctrl+/");
-      comment.addActionListener(new java.awt.event.ActionListener() {
+      edit.add(menuItem(findAction, KeyEvent.VK_F));
+      JMenuItem replaceItem = menuItem(replaceAction, KeyEvent.VK_H);
+      edit.add(replaceItem);
+      edit.add(menuItem(gotoLineAction, KeyEvent.VK_G));
+      edit.addSeparator();
+      JMenuItem comment = new JMenuItem("Megjegyzés ki/be   Ctrl+/");
+      comment.addActionListener(new ActionListener() {
          public void actionPerformed(ActionEvent e) {
             progText.getActionMap().get("plang-comment").actionPerformed(e);
          }
       });
       edit.add(comment);
+      edit.addSeparator();
+      edit.add(menuItem(increaseFontAction, KeyEvent.VK_EQUALS));
+      edit.add(menuItem(decreaseFontAction, KeyEvent.VK_MINUS));
 
-      javax.swing.JMenu runMenu = new javax.swing.JMenu("Futtatás");
+      JMenu runMenu = new JMenu("Futtatás");
       runMenu.add(menuItem(parseAction, 0));
       runMenu.add(menuItem(runAction, 0));
       runMenu.add(menuItem(stopAction, 0));
@@ -1312,11 +1575,11 @@ public class Workbench extends JPanel {
          runMenu.add(menuItem(leaveAction, 0));
       }
 
-      javax.swing.JMenu view = new javax.swing.JMenu("Nézet");
+      JMenu view = new JMenu("Nézet");
       view.add(menuItem(toggleThemeAction, 0));
       view.add(menuItem(showPreferences, 0));
 
-      javax.swing.JMenu help = new javax.swing.JMenu("Súgó");
+      JMenu help = new JMenu("Súgó");
       help.add(menuItem(helpAction, 0));
 
       mb.add(file);
@@ -1327,11 +1590,10 @@ public class Workbench extends JPanel {
       this.menuBar = mb;
    }
 
-   private javax.swing.JMenuItem menuItem(Action a, int key) {
-      javax.swing.JMenuItem mi = new javax.swing.JMenuItem(a);
+   private JMenuItem menuItem(Action a, int key) {
+      JMenuItem mi = new JMenuItem(a);
       if (key != 0) {
-         mi.setAccelerator(KeyStroke.getKeyStroke(key,
-            shortcutMask()));
+         mi.setAccelerator(KeyStroke.getKeyStroke(key, shortcutMask()));
       }
       return mi;
    }
@@ -1344,10 +1606,21 @@ public class Workbench extends JPanel {
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F5, InputEvent.SHIFT_DOWN_MASK), "stop", stopAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_B, mask), "parse", parseAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_S, mask), "save", saveAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_S, mask | InputEvent.SHIFT_DOWN_MASK), "saveAs", saveAsAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_O, mask), "open", loadAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_N, mask), "new", newAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F, mask), "find", findAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_H, mask), "replace", replaceAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_G, mask), "goto", gotoLineAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_COMMA, mask), "prefs", showPreferences);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_Z, mask), "undo", undoAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_Y, mask), "redo", redoAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_Z, mask | InputEvent.SHIFT_DOWN_MASK), "redo2", redoAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, mask), "incFont", increaseFontAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, mask), "incFont2", increaseFontAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_ADD, mask), "incFont3", increaseFontAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, mask), "decFont", decreaseFontAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_SUBTRACT, mask), "decFont2", decreaseFontAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), "help", helpAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F11, 0), "enter", enterAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F11, InputEvent.SHIFT_DOWN_MASK), "leave", leaveAction);
@@ -1357,11 +1630,8 @@ public class Workbench extends JPanel {
       c.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(ks, name);
       c.getActionMap().put(name, new AbstractAction() {
          private static final long serialVersionUID = 1L;
-
          public void actionPerformed(ActionEvent e) {
-            if (a.isEnabled()) {
-               a.actionPerformed(e);
-            }
+            if (a.isEnabled()) a.actionPerformed(e);
          }
       });
    }
@@ -1374,7 +1644,6 @@ public class Workbench extends JPanel {
       }
    }
 
-   /** A hibás sorokat megjelöli a szerkesztőben és összeszámolja őket. */
    private int errorCount;
 
    private void markErrors(MainProgram prog) {
@@ -1385,9 +1654,7 @@ public class Workbench extends JPanel {
          ProgramLine pl = lst.getElementAt(i);
          if (pl.hasError()) {
             errorCount++;
-            if (firstError < 0) {
-               firstError = i;
-            }
+            if (firstError < 0) firstError = i;
          }
       }
       progText.setErrorLine(-1);
@@ -1418,15 +1685,11 @@ public class Workbench extends JPanel {
    }
 
    private void refreshOutline() {
-      if (outline != null) {
-         outline.rebuild(progText.getText());
-      }
+      if (outline != null) outline.rebuild(progText.getText());
    }
 
    private void updateStatus() {
-      if (statusBar == null) {
-         return;
-      }
+      if (statusBar == null) return;
       statusBar.setText("pos", "Sor " + progText.caretLine() + ", Oszlop " + progText.caretColumn());
       statusBar.setText("theme", Theme.isDark() ? "Sötét téma" : "Világos téma");
       statusBar.setText("diag", errorCount == 0 ? "Nincs hiba" : (errorCount + " hiba"));
@@ -1442,6 +1705,7 @@ public class Workbench extends JPanel {
          statusBar.setIcon("run", VSIcons.PLAY, null);
          statusBar.setText("steps", "");
       }
+      // msgCell-t nem írjuk felül itt
    }
 
    private void showHelp() {
@@ -1454,14 +1718,20 @@ public class Workbench extends JPanel {
          + "<tr><td><b>Ctrl+N</b></td><td>Új program</td></tr>"
          + "<tr><td><b>Ctrl+O</b></td><td>Megnyitás</td></tr>"
          + "<tr><td><b>Ctrl+S</b></td><td>Mentés</td></tr>"
+         + "<tr><td><b>Ctrl+Shift+S</b></td><td>Mentés másként</td></tr>"
+         + "<tr><td><b>Ctrl+Z</b></td><td>Visszavonás</td></tr>"
+         + "<tr><td><b>Ctrl+Y / Ctrl+Shift+Z</b></td><td>Újra</td></tr>"
          + "<tr><td><b>Ctrl+B</b></td><td>Értelmezés</td></tr>"
          + "<tr><td><b>F5</b></td><td>Futtatás</td></tr>"
          + "<tr><td><b>Shift+F5</b></td><td>Futtatás vége</td></tr>"
          + "<tr><td><b>Ctrl+F</b></td><td>Keresés</td></tr>"
+         + "<tr><td><b>Ctrl+H</b></td><td>Csere</td></tr>"
+         + "<tr><td><b>Ctrl+G</b></td><td>Ugrás sorra</td></tr>"
          + "<tr><td><b>Ctrl+/</b></td><td>Megjegyzés ki/be</td></tr>"
          + "<tr><td><b>Ctrl+D</b></td><td>Sor megkettőzése</td></tr>"
          + "<tr><td><b>Alt+↑ / Alt+↓</b></td><td>Sor mozgatása</td></tr>"
          + "<tr><td><b>Tab / Shift+Tab</b></td><td>Behúzás növelése / csökkentése</td></tr>"
+         + "<tr><td><b>Ctrl+ + / Ctrl+ -</b></td><td>Betűméret</td></tr>"
          + "<tr><td><b>Ctrl+,</b></td><td>Beállítások</td></tr>"
          + "</table>"
          + "<h3>Nyelvi elemek</h3>"
@@ -1475,14 +1745,11 @@ public class Workbench extends JPanel {
 
    /* ---------------------------- témaváltás ---------------------------- */
 
-   /** A teljes felületet újraszínezi az aktuális téma szerint. */
    public void applyThemeToAll() {
       Theme.installUIDefaults();
       StreamDocument.refreshStyles();
-
       Theme.Palette p = Theme.p();
       setBackground(p.editorBg);
-
       activityBar.applyTheme();
       sideBar.setBackground(p.sideBar);
       editorTabs.applyTheme();
@@ -1490,14 +1757,12 @@ public class Workbench extends JPanel {
       findBar.applyTheme();
       progText.applyTheme();
       gutter.applyTheme();
-
       progPanel.setBackground(p.editorBg);
       progList.setBackground(p.editorBg);
       exprTree.setBackground(p.panelBg);
       stateTable.setBackground(p.panelBg);
       stateTable.getTableHeader().setBackground(p.tableHeaderBg);
       callStack.setBackground(p.panelBg);
-
       if (editorScroll != null) {
          editorScroll.getViewport().setBackground(p.editorBg);
          editorScroll.getRowHeader().setBackground(p.editorBg);
@@ -1507,17 +1772,13 @@ public class Workbench extends JPanel {
          listScroll.getViewport().setBackground(p.editorBg);
          listScroll.setBackground(p.editorBg);
       }
-
       inpPanes.applyTheme();
       outPanes.applyTheme();
-
       recolorTree(this);
       SwingUtilities.updateComponentTreeUI(this);
       if (menuBar != null) {
          SwingUtilities.updateComponentTreeUI(menuBar);
       }
-
-      // az updateComponentTreeUI visszaállíthat egyes egyedi megjelenéseket
       reinstallCustomUI();
       repaint();
    }
@@ -1543,7 +1804,6 @@ public class Workbench extends JPanel {
       }
    }
 
-   /** A paneleket rekurzívan a téma háttérszínére állítja. */
    private void recolorTree(Component c) {
       Theme.Palette p = Theme.p();
       if (c instanceof PanelHeader) {
@@ -1551,8 +1811,6 @@ public class Workbench extends JPanel {
       } else if (c instanceof JSplitPane) {
          c.setBackground(p.border);
       } else if (c instanceof JPanel) {
-         Color bg = c.getBackground();
-         // a paneleket a szerepük szerint színezzük
          c.setBackground(p.sideBar);
       }
       if (c instanceof java.awt.Container) {
@@ -1565,23 +1823,17 @@ public class Workbench extends JPanel {
 
    /* ------------------------- belső segédosztályok ------------------------- */
 
-   /** A változótábla fejlécének megjelenítése. */
    private final class HeaderRenderer extends JComponent
          implements javax.swing.table.TableCellRenderer {
       private static final long serialVersionUID = 1L;
       private String text = "";
-
       public Component getTableCellRendererComponent(JTable table, Object value,
                                                      boolean isSelected, boolean hasFocus,
                                                      int row, int column) {
          this.text = value == null ? "" : String.valueOf(value);
          return this;
       }
-
-      public Dimension getPreferredSize() {
-         return new Dimension(60, 26);
-      }
-
+      public Dimension getPreferredSize() { return new Dimension(60, 26); }
       protected void paintComponent(Graphics g) {
          Graphics2D g2 = (Graphics2D) g.create();
          g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
@@ -1607,14 +1859,12 @@ public class Workbench extends JPanel {
       }
    }
 
-   /** A hívási verem elemeinek megjelenítése. */
    private final class CallStackRenderer extends JComponent
          implements javax.swing.ListCellRenderer {
       private static final long serialVersionUID = 1L;
       private String text = "";
       private boolean sel;
       private boolean top;
-
       public Component getListCellRendererComponent(JList list, Object value, int index,
                                                     boolean isSelected, boolean cellHasFocus) {
          this.text = ProgLineRenderer.stripHtml(String.valueOf(value))[0];
@@ -1622,11 +1872,7 @@ public class Workbench extends JPanel {
          this.top = (index == list.getModel().getSize() - 1);
          return this;
       }
-
-      public Dimension getPreferredSize() {
-         return new Dimension(120, 22);
-      }
-
+      public Dimension getPreferredSize() { return new Dimension(120, 22); }
       protected void paintComponent(Graphics g) {
          Graphics2D g2 = (Graphics2D) g.create();
          g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -1646,11 +1892,9 @@ public class Workbench extends JPanel {
       }
    }
 
-   /** A programvázlat (alprogramok, változók) listája. */
    private final class OutlineList extends JList {
       private static final long serialVersionUID = 1L;
       private final javax.swing.DefaultListModel model = new javax.swing.DefaultListModel();
-
       OutlineList() {
          setModel(model);
          setBackground(Theme.p().sideBar);
@@ -1675,12 +1919,9 @@ public class Workbench extends JPanel {
             }
          });
       }
-
       void rebuild(String src) {
          model.clear();
-         if (src == null) {
-            return;
-         }
+         if (src == null) return;
          String[] lines = src.split("\n", -1);
          for (int i = 0; i < lines.length; i++) {
             String t = lines[i].trim();
@@ -1704,21 +1945,15 @@ public class Workbench extends JPanel {
       }
    }
 
-   /** A vázlat egy sora. */
    private static final class OutlineCell extends JComponent {
       private static final long serialVersionUID = 1L;
       private final Object[] row;
       private final boolean sel;
-
       OutlineCell(Object[] row, boolean sel) {
          this.row = row;
          this.sel = sel;
       }
-
-      public Dimension getPreferredSize() {
-         return new Dimension(150, 22);
-      }
-
+      public Dimension getPreferredSize() { return new Dimension(150, 22); }
       protected void paintComponent(Graphics g) {
          Graphics2D g2 = (Graphics2D) g.create();
          g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -1739,25 +1974,16 @@ public class Workbench extends JPanel {
       }
    }
 
-   /** A .plang kiterjesztés szűrője (az eredetivel megegyező). */
    private class PlangFilter extends FileFilter {
-      private PlangFilter() {
-      }
-
+      private PlangFilter() {}
       public boolean accept(File f) {
-         if (f.isDirectory()) {
-            return true;
-         }
+         if (f.isDirectory()) return true;
          String n = f.getName();
-         return n.substring(n.lastIndexOf(46) + 1).toLowerCase().equals("plang");
+         int dot = n.lastIndexOf('.');
+         if (dot < 0) return false;
+         return n.substring(dot + 1).toLowerCase().equals("plang");
       }
-
-      public String getDescription() {
-         return "Plang programok (*.plang)";
-      }
-
-      PlangFilter(PlangFilter var2) {
-         this();
-      }
+      public String getDescription() { return "Plang programok (*.plang)"; }
+      PlangFilter(PlangFilter var2) { this(); }
    }
 }
