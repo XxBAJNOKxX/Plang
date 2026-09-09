@@ -195,6 +195,8 @@ public class Workbench extends JPanel {
 
    private int lastStepCount;
    private boolean running;
+   /** A futás végén magától kilép-e a futtatási módból (beállítás, alapból ki). */
+   private boolean autoStop = false;
 
    /* ---- új mezők ---- */
    private JMenu recentMenu;
@@ -225,8 +227,10 @@ public class Workbench extends JPanel {
 
    private void listState() {
       this.loadAction.setEnabled(false);
-      this.saveAction.setEnabled(false);
-      this.saveAsAction.setEnabled(false);
+      /* A programszöveg értelmezett nézetben is menthető: a szerkesztő
+         tartalma változatlanul rendelkezésre áll. */
+      this.saveAction.setEnabled(true);
+      this.saveAsAction.setEnabled(true);
       this.parseAction.setEnabled(false);
       this.editAction.setEnabled(true);
       this.progCards.show(this.progPanel, PROGLIST);
@@ -239,6 +243,9 @@ public class Workbench extends JPanel {
       this.copyAction.setEnabled(false);
       this.runAction.setEnabled(false);
       this.stopAction.setEnabled(true);
+      /* Futás közben is menthető a programszöveg. */
+      this.saveAction.setEnabled(true);
+      this.saveAsAction.setEnabled(true);
       this.running = true;
       this.statusBar.setRunning(true);
       this.inpPanes.setEditable(false);
@@ -250,6 +257,8 @@ public class Workbench extends JPanel {
       this.copyAction.setEnabled(true);
       this.runAction.setEnabled(true);
       this.stopAction.setEnabled(false);
+      this.saveAction.setEnabled(true);
+      this.saveAsAction.setEnabled(true);
       this.enterAction.setEnabled(false);
       this.leaveAction.setEnabled(false);
       this.running = false;
@@ -263,6 +272,29 @@ public class Workbench extends JPanel {
          progList.repaint();
       }
       progText.setRunningLine(-1);
+      updateStatus();
+   }
+
+   /**
+    * A futás befejeződött: a vezérlők visszaállnak, de a lefutás eredménye
+    * (állapottábla, kimeneti csatornák) a képernyőn marad, hogy vissza
+    * lehessen nézni. A „Stop” ezután üríti ki a nézetet.
+    */
+   private void finishedState(boolean hadError) {
+      this.editAction.setEnabled(true);
+      this.copyAction.setEnabled(true);
+      this.runAction.setEnabled(true);
+      this.stopAction.setEnabled(true);
+      this.saveAction.setEnabled(true);
+      this.saveAsAction.setEnabled(true);
+      this.running = false;
+      if (this.statusBar != null) {
+         this.statusBar.setRunning(false);
+      }
+      this.inpPanes.setEditable(true);
+      showTransientMessage(hadError
+            ? "A program futása hiba miatt megszakadt – leállítva."
+            : "A program lefutott – leállítva.");
       updateStatus();
    }
 
@@ -336,6 +368,12 @@ public class Workbench extends JPanel {
       PlangFilter pf = new PlangFilter(null);
       this.fileChooser.addChoosableFileFilter(pf);
       this.fileChooser.setFileFilter(pf);
+
+      try {
+         this.autoStop = AppPrefs.getAutoStop();
+      } catch (Exception e) {
+         this.autoStop = false;
+      }
 
       // recent files betöltése
       loadRecentFiles();
@@ -644,7 +682,14 @@ public class Workbench extends JPanel {
                   Workbench.this.autoSizeStateColumns();
                   Workbench.this.updateStatus();
 
-                  if (last.getError() != null) {
+                  boolean hadError = last.getError() != null;
+                  /* A futás végén (illetve hibára mindenképp) kilépünk a
+                     futtatási módból – az eredmény a képernyőn marad. */
+                  if (hadError || Workbench.this.autoStop) {
+                     Workbench.this.finishedState(hadError);
+                  }
+
+                  if (hadError) {
                      JOptionPane.showMessageDialog(Workbench.this,
                         "A program futása a következő hiba miatt megszakadt:\n" + last.getError(),
                         "Futási hiba", JOptionPane.WARNING_MESSAGE);
@@ -715,13 +760,15 @@ public class Workbench extends JPanel {
             pd.setValues(Workbench.this.textFont,
                          ((CallStack) Workbench.this.callStack.getModel()).getMaxSteps(),
                          Theme.mode(),
-                         Workbench.this.progText.isShowIndentGuides());
+                         Workbench.this.progText.isShowIndentGuides(),
+                         Workbench.this.autoStop);
             if (pd.showDlg()) {
                Workbench.this.textFont = pd.getTextFont();
                Workbench.this.progText.setShowIndentGuides(pd.isShowIndentGuides());
                Workbench.this.updateFont();
                ((CallStack) Workbench.this.callStack.getModel())
                   .setMaxSteps(pd.getStepNum());
+               Workbench.this.autoStop = pd.isAutoStop();
                if (pd.getThemeMode() != Theme.mode()) {
                   Theme.setMode(pd.getThemeMode());
                   Workbench.this.applyThemeToAll();
@@ -733,6 +780,7 @@ public class Workbench extends JPanel {
                AppPrefs.setStepNum(pd.getStepNum());
                AppPrefs.setThemeMode(pd.getThemeMode());
                AppPrefs.setIndentGuides(pd.isShowIndentGuides());
+               AppPrefs.setAutoStop(pd.isAutoStop());
                AppPrefs.flush();
             }
          }
@@ -1202,8 +1250,13 @@ public class Workbench extends JPanel {
 
    /* ---- mentés visszajelzés ---- */
    private void showSaveFeedback(String fileName) {
+      showTransientMessage("Mentve: " + fileName);
+   }
+
+   /** Rövid ideig látszó üzenet az állapotsorban. */
+   private void showTransientMessage(String text) {
       if (statusBar == null || msgCell == null) return;
-      statusBar.setText("msg", "Mentve: " + fileName);
+      statusBar.setText("msg", text);
       if (msgClearTimer != null) {
          msgClearTimer.stop();
       }
@@ -1392,6 +1445,7 @@ public class Workbench extends JPanel {
          if (progText != null) {
             AppPrefs.setIndentGuides(progText.isShowIndentGuides());
          }
+         AppPrefs.setAutoStop(autoStop);
          int mainDiv = -1, centerDiv = -1, rightDiv = -1, inspectDiv = -1, consoleDiv = -1;
          if (mainSplit != null) mainDiv = mainSplit.getDividerLocation();
          if (centerSplit != null) centerDiv = centerSplit.getDividerLocation();

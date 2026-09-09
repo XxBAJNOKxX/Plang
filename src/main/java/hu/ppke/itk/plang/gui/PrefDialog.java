@@ -46,6 +46,7 @@ public class PrefDialog extends JDialog {
    private JSpinner stepNum;
    private JComboBox themeCombo;
    private JCheckBox indentGuides;
+   private JCheckBox autoStop;
 
    private boolean result;
    private int font;
@@ -53,6 +54,7 @@ public class PrefDialog extends JDialog {
    private int step;
    private int theme;
    private boolean guides;
+   private boolean stopAtEnd;
 
    PrefDialog(JFrame owner) {
       super(owner, "Beállítások", true);
@@ -149,6 +151,19 @@ public class PrefDialog extends JDialog {
       panel.add(this.indentGuides, gc);
       row++;
 
+      // --- automatikus leállítás ---
+      this.autoStop = new JCheckBox("A program végén automatikusan álljon le", false);
+      this.autoStop.setFont(Theme.uiPlain());
+      this.autoStop.setOpaque(false);
+      this.autoStop.setForeground(Theme.p().sideBarFg);
+      this.autoStop.setToolTipText("A futtatás befejeztével (és futási hiba esetén) "
+            + "a környezet magától kilép a futtatási módból.");
+      gc.gridx = 1;
+      gc.gridy = row;
+      gc.weightx = 1;
+      panel.add(this.autoStop, gc);
+      row++;
+
       root.add(panel, BorderLayout.CENTER);
 
       // --- gombok ---
@@ -227,6 +242,15 @@ public class PrefDialog extends JDialog {
       return this.indentGuides.isSelected();
    }
 
+   /** Igaz, ha a futás végén a környezet magától leáll. */
+   boolean isAutoStop() {
+      return this.autoStop.isSelected();
+   }
+
+   void setAutoStop(boolean b) {
+      this.autoStop.setSelected(b);
+   }
+
    void setFontFamily(String family) {
       if (family != null) {
          this.fontCombo.setSelectedItem(family);
@@ -258,6 +282,10 @@ public class PrefDialog extends JDialog {
    }
 
    void setValues(Font font, int stepNum, int themeMode, boolean guides) {
+      setValues(font, stepNum, themeMode, guides, isAutoStop());
+   }
+
+   void setValues(Font font, int stepNum, int themeMode, boolean guides, boolean autoStop) {
       if (font != null) {
          setFontFamily(font.getFamily());
          setFontSizeValue(font.getSize());
@@ -265,6 +293,7 @@ public class PrefDialog extends JDialog {
       setStepNumValue(stepNum);
       setThemeMode(themeMode);
       setIndentGuides(guides);
+      setAutoStop(autoStop);
    }
 
    private void save() {
@@ -273,6 +302,7 @@ public class PrefDialog extends JDialog {
       this.step = ((Integer) this.stepNum.getValue()).intValue();
       this.theme = this.themeCombo.getSelectedIndex();
       this.guides = this.indentGuides.isSelected();
+      this.stopAtEnd = this.autoStop.isSelected();
    }
 
    private void restore() {
@@ -281,6 +311,7 @@ public class PrefDialog extends JDialog {
       this.stepNum.setValue(Integer.valueOf(this.step));
       this.themeCombo.setSelectedIndex(this.theme);
       this.indentGuides.setSelected(this.guides);
+      this.autoStop.setSelected(this.stopAtEnd);
    }
 
    /** Az eredeti, blokkoló megjelenítés – a hívó logika változatlan maradhat. */

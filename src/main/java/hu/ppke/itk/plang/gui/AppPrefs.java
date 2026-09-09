@@ -103,6 +103,22 @@ public final class AppPrefs {
         } catch (Exception e) {}
     }
 
+    /* ---- automatikus leállás a program végén ---- */
+
+    public static boolean getAutoStop() {
+        try {
+            return prefs().getBoolean("autoStop", false);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static void setAutoStop(boolean b) {
+        try {
+            prefs().putBoolean("autoStop", b);
+        } catch (Exception e) {}
+    }
+
     /* ---- ablakméret / pozíció ---- */
 
     public static int getWindowWidth() {

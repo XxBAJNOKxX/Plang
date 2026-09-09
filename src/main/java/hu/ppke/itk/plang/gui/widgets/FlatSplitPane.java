@@ -3,6 +3,7 @@ package hu.ppke.itk.plang.gui.widgets;
 import java.awt.Component;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 
 import javax.swing.BorderFactory;
 import javax.swing.JSplitPane;
@@ -25,7 +26,9 @@ public class FlatSplitPane extends JSplitPane {
       setDividerSize(5);
       setContinuousLayout(true);
       setOpaque(true);
-      setBackground(Theme.p().border);
+      /* Az osztó sávja a környezetével azonos színű, így csak az
+         elválasztó vonal látszik belőle. */
+      setBackground(Theme.p().editorBg);
       installUI();
    }
 
@@ -44,25 +47,46 @@ public class FlatSplitPane extends JSplitPane {
                   Theme.Palette p = Theme.p();
                   g2.setColor(p.editorBg);
                   g2.fillRect(0, 0, getWidth(), getHeight());
-                  g2.setColor(p.border);
-                  if (getOrientation() == JSplitPane.HORIZONTAL_SPLIT) {
-                     int x = getWidth() / 2;
-                     g2.drawLine(x, 0, x, getHeight());
-                  } else {
-                     int y = getHeight() / 2;
-                     g2.drawLine(0, y, getWidth(), y);
-                  }
+                  drawDividerLine(g2, p, getOrientation(),
+                                  0, 0, getWidth(), getHeight());
                   g2.dispose();
                }
             };
+         }
+
+         /**
+          * Az elválasztó vonalat az UI delegált is felrajzolja. A divider egy
+          * AWT Container gyerek, a paint()-je nem minden megjelenítési úton
+          * hívódik meg (nyomtatás/headless rendereléskor nem), itt viszont
+          * garantáltan sorra kerül.
+          */
+         public void paint(Graphics g, javax.swing.JComponent c) {
+            Component d = getDivider();
+            if (d == null) {
+               return;
+            }
+            Rectangle r = d.getBounds();
+            drawDividerLine(g, Theme.p(), getOrientation(),
+                            r.x, r.y, r.width, r.height);
          }
       });
       setBorder(BorderFactory.createEmptyBorder());
    }
 
+   /** Egyetlen éles pixelnyi elválasztó vonal a sáv közepén. */
+   private static void drawDividerLine(Graphics g, Theme.Palette p, int orientation,
+                                       int x, int y, int w, int h) {
+      g.setColor(p.divider);
+      if (orientation == JSplitPane.HORIZONTAL_SPLIT) {
+         g.fillRect(x + w / 2, y, 1, h);
+      } else {
+         g.fillRect(x, y + h / 2, w, 1);
+      }
+   }
+
    /** A téma váltása után frissíti a színeket. */
    public void applyTheme() {
-      setBackground(Theme.p().border);
+      setBackground(Theme.p().editorBg);
       installUI();
       setDividerSize(5);
       repaint();

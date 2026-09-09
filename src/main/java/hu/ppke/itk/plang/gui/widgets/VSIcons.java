@@ -121,19 +121,11 @@ public final class VSIcons {
             g.drawLine(10, 10, 14, 14);
             break;
 
-         case SETTINGS: {
-            g.draw(new Ellipse2D.Double(5.5, 5.5, 5, 5));
-            for (int i = 0; i < 8; i++) {
-               double a = Math.PI * i / 4.0;
-               double x1 = 8 + Math.cos(a) * 5.6;
-               double y1 = 8 + Math.sin(a) * 5.6;
-               double x2 = 8 + Math.cos(a) * 7.2;
-               double y2 = 8 + Math.sin(a) * 7.2;
-               g.drawLine((int) Math.round(x1), (int) Math.round(y1),
-                          (int) Math.round(x2), (int) Math.round(y2));
-            }
+         case SETTINGS:
+            // fogaskerék: 8 fogú koszorú, középen tengelylyuk
+            g.draw(gearPath(8, 8, 8, 4.6, 6.4, 0.42));
+            g.draw(new Ellipse2D.Double(6.0, 6.0, 4.0, 4.0));
             break;
-         }
 
          case PLAY:
             g.fill(tri(4, 2.5, 13, 8, 4, 13.5));
@@ -340,6 +332,52 @@ public final class VSIcons {
       p.lineTo(x3, y3);
       p.lineTo(x4, y4);
       return p;
+   }
+
+   /**
+    * Fogaskerék-kontúr.
+    *
+    * @param teeth     fogak száma
+    * @param rin       a fogak közötti völgy sugara
+    * @param rout      a fogak csúcsának sugara
+    * @param toothFrac a periódus hányadát teszi ki a fog teteje
+    */
+   private static GeneralPath gearPath(double cx, double cy, int teeth,
+                                       double rin, double rout, double toothFrac) {
+      GeneralPath p = new GeneralPath(Path2D.WIND_NON_ZERO);
+      double period = 2 * Math.PI / teeth;
+      double half = toothFrac * period / 2.0;
+      double edge = (period / 2.0 - half) * 0.5;
+      for (int i = 0; i < teeth; i++) {
+         double c = i * period;
+         // völgyív az előző fog lejtőjétől a következő emelkedéséig
+         arcTo(p, cx, cy, rin, c - period + half + edge, c - half - edge, i == 0);
+         gearPoint(p, cx, cy, rout, c - half, false);   // emelkedés
+         arcTo(p, cx, cy, rout, c - half, c + half, false);
+         gearPoint(p, cx, cy, rin, c + half + edge, false); // lejtés
+      }
+      p.closePath();
+      return p;
+   }
+
+   private static void gearPoint(GeneralPath p, double cx, double cy, double r,
+                                 double a, boolean move) {
+      float x = (float) (cx + Math.cos(a) * r);
+      float y = (float) (cy + Math.sin(a) * r);
+      if (move) {
+         p.moveTo(x, y);
+      } else {
+         p.lineTo(x, y);
+      }
+   }
+
+   /** `a0` és `a1` közötti ívet vonalszakaszokkal közelíti. */
+   private static void arcTo(GeneralPath p, double cx, double cy, double r,
+                             double a0, double a1, boolean move) {
+      int n = Math.max(2, (int) Math.ceil(Math.abs(a1 - a0) / 0.25));
+      for (int k = (move ? 0 : 1); k <= n; k++) {
+         gearPoint(p, cx, cy, r, a0 + (a1 - a0) * k / n, move && k == 0);
+      }
    }
 
    private VSIcons() {
