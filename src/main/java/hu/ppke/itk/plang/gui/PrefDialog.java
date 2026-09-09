@@ -152,7 +152,7 @@ public class PrefDialog extends JDialog {
       row++;
 
       // --- automatikus leállítás ---
-      this.autoStop = new JCheckBox("A program végén automatikusan álljon le", true);
+      this.autoStop = new JCheckBox("A program végén automatikusan álljon le", false);
       this.autoStop.setFont(Theme.uiPlain());
       this.autoStop.setOpaque(false);
       this.autoStop.setForeground(Theme.p().sideBarFg);

@@ -195,8 +195,8 @@ public class Workbench extends JPanel {
 
    private int lastStepCount;
    private boolean running;
-   /** A futás végén magától kilép-e a futtatási módból (beállítás). */
-   private boolean autoStop = true;
+   /** A futás végén magától kilép-e a futtatási módból (beállítás, alapból ki). */
+   private boolean autoStop = false;
 
    /* ---- új mezők ---- */
    private JMenu recentMenu;
@@ -372,7 +372,7 @@ public class Workbench extends JPanel {
       try {
          this.autoStop = AppPrefs.getAutoStop();
       } catch (Exception e) {
-         this.autoStop = true;
+         this.autoStop = false;
       }
 
       // recent files betöltése

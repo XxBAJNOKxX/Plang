@@ -107,9 +107,9 @@ public final class AppPrefs {
 
     public static boolean getAutoStop() {
         try {
-            return prefs().getBoolean("autoStop", true);
+            return prefs().getBoolean("autoStop", false);
         } catch (Exception e) {
-            return true;
+            return false;
         }
     }
 
