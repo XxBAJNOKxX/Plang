@@ -84,6 +84,15 @@ public class CodeEditor extends JTextPane {
       try {
          if (undoManager.canUndo()) {
             undoManager.undo();
+            /* A visszavonás nyers szövegművelet, amely után a soronkénti
+               újraszínezés nem mindig fedi le a változást (pl. egy komment
+               törlése összeolvasztja a sorokat) – ezért a teljes dokumentumot
+               újraszínezzük. A színezés CHANGE típusú edit, az undo manager
+               kiszűri, így nem kerül be a visszavonási történetbe. */
+            if (getDocument() instanceof SyntaxDocument) {
+               ((SyntaxDocument) getDocument()).highlightAll();
+            }
+            repaint();
          }
       } catch (Exception e) {
          // nem kritikus
@@ -94,6 +103,10 @@ public class CodeEditor extends JTextPane {
       try {
          if (undoManager.canRedo()) {
             undoManager.redo();
+            if (getDocument() instanceof SyntaxDocument) {
+               ((SyntaxDocument) getDocument()).highlightAll();
+            }
+            repaint();
          }
       } catch (Exception e) {
          // nem kritikus
