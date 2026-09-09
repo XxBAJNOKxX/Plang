@@ -1,0 +1,15 @@
+** Egyszerű példaprogram: két szám összege
+PROGRAM osszeadas
+VÁLTOZÓK:
+  a, b, osszeg: EGÉSZ
+
+BE: a
+BE: b
+osszeg := a + b
+KI: "Az összeg: ", osszeg
+HA osszeg > 10 AKKOR
+  KI: "Nagyobb mint tiz"
+KÜLÖNBEN
+  KI: "Legfeljebb tiz"
+HA_VÉGE
+PROGRAM_VÉGE

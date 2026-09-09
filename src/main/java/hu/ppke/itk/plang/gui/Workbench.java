@@ -1,0 +1,1763 @@
+package hu.ppke.itk.plang.gui;
+
+import java.awt.BorderLayout;
+import java.awt.CardLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.GridLayout;
+import java.awt.RenderingHints;
+import java.awt.Toolkit;
+import java.awt.event.ActionEvent;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.io.StringReader;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+
+import javax.swing.AbstractAction;
+import javax.swing.Action;
+import javax.swing.BorderFactory;
+import javax.swing.Icon;
+import javax.swing.JComponent;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
+import javax.swing.JTable;
+import javax.swing.JTextPane;
+import javax.swing.JTree;
+import javax.swing.KeyStroke;
+import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
+import javax.swing.event.TreeSelectionEvent;
+import javax.swing.event.TreeSelectionListener;
+import javax.swing.filechooser.FileFilter;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableColumn;
+import javax.swing.tree.TreePath;
+
+import hu.ppke.itk.plang.gui.editor.CodeEditor;
+import hu.ppke.itk.plang.gui.editor.LineNumberGutter;
+import hu.ppke.itk.plang.gui.theme.Theme;
+import hu.ppke.itk.plang.gui.widgets.ActivityBar;
+import hu.ppke.itk.plang.gui.widgets.EditorTabBar;
+import hu.ppke.itk.plang.gui.widgets.FlatButton;
+import hu.ppke.itk.plang.gui.widgets.FlatScrollBarUI;
+import hu.ppke.itk.plang.gui.widgets.FlatSplitPane;
+import hu.ppke.itk.plang.gui.widgets.FindBar;
+import hu.ppke.itk.plang.gui.widgets.PanelHeader;
+import hu.ppke.itk.plang.gui.widgets.StatusBar;
+import hu.ppke.itk.plang.gui.widgets.VSIcons;
+import hu.ppke.itk.plang.prog.Lexer;
+import hu.ppke.itk.plang.prog.MainProgram;
+import hu.ppke.itk.plang.prog.State;
+import hu.ppke.itk.plang.prog.StreamData;
+import hu.ppke.itk.plang.prog.StreamKind;
+
+/**
+ * A PLanG fejlesztőkörnyezet munkafelülete – Visual Studio Code ihletésű
+ * elrendezéssel.
+ *
+ * Az elrendezés a VSC-t követi: bal szélen tevékenységsáv, mellette oldalsáv,
+ * középen a fülekkel ellátott szerkesztő, jobbra a végrehajtás vizsgálata
+ * (változók, kifejezésfa, hívási verem), alul a be-/kimeneti panel, legalul
+ * pedig az állapotsor.
+ *
+ * A program eredeti működése változatlan: a Betölt / Ment / Értelmez /
+ * Szerkeszt / Másol / Start / Stop / Belépés / Kilépés / Beállítások műveletek
+ * ugyanazokat a modelleket hajtják, mint korábban.
+ */
+public class Workbench extends JPanel {
+
+   private static final long serialVersionUID = 1L;
+
+   /** A befoglaló ablak (lehet {@code null} – például teszteléskor). */
+   private final JFrame owner;
+
+   /** A munkafelülethez tartozó menüsor. */
+   private javax.swing.JMenuBar menuBar;
+
+   /** Kilépési kérés kezelője, amelyet a befoglaló ablak állít be. */
+   private Runnable exitHandler;
+
+   /* ---- műveletek (az eredeti szemantikával) ---- */
+   private JFileChooser fileChooser;
+   private Action loadAction;
+   private Action saveAction;
+   private Action saveAsAction;
+   private Action newAction;
+   private Action parseAction;
+   private Action editAction;
+   private Action copyAction;
+   private Action runAction;
+   private Action stopAction;
+   private Action enterAction;
+   private Action leaveAction;
+   private Action showPreferences;
+   private Action toggleThemeAction;
+   private Action findAction;
+   private Action helpAction;
+
+   private PrefDialog prefDialog;
+
+   /** A futtatás alapértelmezett lépéskorlátja (a beállításokban módosítható). */
+   private static final int DEFAULT_STEPS = 10000;
+
+   private ListSelectionListener selProgLine;
+   private ListSelectionListener selProgState;
+   private TreeSelectionListener selExprNode;
+
+   /* ---- modellt hordozó nézetek (az eredetivel megegyező típusok) ---- */
+   private JList progList;
+   private CodeEditor progText;
+   private boolean progTextChanged;
+
+   private static final String PROGLIST = "ProgList";
+   private static final String PROGTEXT = "ProgText";
+   private JPanel progPanel;
+   private CardLayout progCards;
+
+   private JList callStack;
+   private JTable stateTable;
+   private JTree exprTree;
+
+   /** A be- és kimeneti csatornákat tartalmazó lapozók. */
+   private StreamTabs inpPanes;
+   private StreamTabs outPanes;
+
+   private Font textFont;
+
+   /* ---- VSC vázszerkezet ---- */
+   private ActivityBar activityBar;
+   private JPanel sideBar;
+   private CardLayout sideCards;
+   private EditorTabBar editorTabs;
+   private StatusBar statusBar;
+   private FindBar findBar;
+   private LineNumberGutter gutter;
+   private JScrollPane editorScroll;
+   private JScrollPane listScroll;
+   private PanelHeader explorerHeader;
+   private PanelHeader varsHeader;
+   private PanelHeader exprHeader;
+   private PanelHeader stackHeader;
+   private JPanel callStackBox;
+   private JSplitPane mainSplit;
+   private JSplitPane rightSplit;
+   private JSplitPane inspectSplit;
+   private JSplitPane consoleSplit;
+   private JSplitPane centerSplit;
+   private JPanel outlinePanel;
+   private OutlineList outline;
+   private ProgLineRenderer progRenderer;
+   private ExprRenderer exprRenderer;
+   private StateCellRenderer stateRenderer;
+   private JLabel emptyStateLabel;
+
+   private File currentFile;
+   private String lastSearch = "";
+
+   /** Az utolsó futtatás állapotlistájának mérete – az állapotsorhoz. */
+   private int lastStepCount;
+   private boolean running;
+
+   /* ================= az eredeti állapotátmenetek ================= */
+
+   private void editState() {
+      this.loadAction.setEnabled(true);
+      this.saveAction.setEnabled(true);
+      this.parseAction.setEnabled(true);
+      this.editAction.setEnabled(false);
+      this.copyAction.setEnabled(false);
+      this.runAction.setEnabled(false);
+      this.progCards.show(this.progPanel, PROGTEXT);
+      this.editorTabs.select("editor");
+      updateStatus();
+      SwingUtilities.invokeLater(new Runnable() {
+         public void run() {
+            progText.requestFocusInWindow();
+         }
+      });
+   }
+
+   private void listState() {
+      this.loadAction.setEnabled(false);
+      this.saveAction.setEnabled(false);
+      this.parseAction.setEnabled(false);
+      this.editAction.setEnabled(true);
+      this.progCards.show(this.progPanel, PROGLIST);
+      this.editorTabs.select("parsed");
+      updateStatus();
+   }
+
+   private void runState() {
+      this.editAction.setEnabled(false);
+      this.copyAction.setEnabled(false);
+      this.runAction.setEnabled(false);
+      this.stopAction.setEnabled(true);
+      this.running = true;
+      this.statusBar.setRunning(true);
+      this.inpPanes.setEditable(false);
+      updateStatus();
+   }
+
+   private void stopState() {
+      this.editAction.setEnabled(true);
+      this.copyAction.setEnabled(true);
+      this.runAction.setEnabled(true);
+      this.stopAction.setEnabled(false);
+      this.enterAction.setEnabled(false);
+      this.leaveAction.setEnabled(false);
+      this.running = false;
+      this.statusBar.setRunning(false);
+      this.inpPanes.setEditable(true);
+      this.inpPanes.resetAttributes();
+      if (progRenderer != null) {
+         progRenderer.setCurrentLine(-1);
+      }
+      if (progList != null) {
+         progList.repaint();
+      }
+      progText.setRunningLine(-1);
+      updateStatus();
+   }
+
+   /* ================= csatornakezelés ================= */
+
+   private static StreamDocument getDocument(StreamTabs panes, int ind) {
+      return panes.getDocument(ind);
+   }
+
+   private void updatePanes(StreamTabs panes, Set<String> streams, boolean edit) {
+      panes.sync(streams, edit, this.textFont);
+   }
+
+   private static void setStreamStates(StreamTabs panes, State state) {
+      for (int i = 0; i < panes.count(); i++) {
+         panes.getDocument(i).setState(state == null ? null : state.getStreamState(panes.getTitleAt(i)));
+      }
+   }
+
+   private void updateFont() {
+      if (progRenderer != null) {
+         progRenderer.setFont(this.textFont);
+      }
+      this.progList.setFixedCellHeight(
+         this.progList.getFontMetrics(this.textFont).getHeight() + 4);
+      this.stateTable.setFont(this.textFont);
+      this.stateTable.setRowHeight(
+         this.stateTable.getFontMetrics(this.textFont).getHeight() + 8);
+      this.stateTable.getTableHeader().setFont(Theme.uiSmallBold());
+      if (stateRenderer != null) {
+         stateRenderer.setFont(this.textFont);
+      }
+      this.progText.setEditorFont(this.textFont);
+      if (gutter != null) {
+         gutter.setFont(this.textFont);
+         gutter.revalidate();
+      }
+      if (exprRenderer != null) {
+         exprRenderer.setFont(this.textFont);
+      }
+      this.exprTree.setRowHeight(this.exprTree.getFontMetrics(this.textFont).getHeight() + 6);
+      this.inpPanes.setTextFont(this.textFont);
+      this.outPanes.setTextFont(this.textFont);
+      this.callStack.setFont(this.textFont);
+      if (outline != null) {
+         outline.setFont(Theme.uiPlain());
+      }
+      repaint();
+   }
+
+   /* ========================= felépítés ========================= */
+
+   public Workbench(JFrame owner) {
+      super(new BorderLayout());
+      this.owner = owner;
+
+      // a témát a hívó (belépési pont) állítja be – itt csak felhasználjuk
+      Theme.installUIDefaults();
+      this.textFont = Theme.mono(Font.PLAIN, 13);
+
+      this.fileChooser = new JFileChooser();
+      this.fileChooser.addChoosableFileFilter(new PlangFilter(null));
+
+      buildActions();
+
+      this.progTextChanged = false;
+
+      buildComponents();
+      buildLayout();
+      buildMenu();
+      installShortcuts();
+
+      applyThemeToAll();
+      updateFont();
+
+      setPreferredSize(new Dimension(1440, 876));
+
+      SwingUtilities.invokeLater(new Runnable() {
+         public void run() {
+            mainSplit.setDividerLocation(260);
+            centerSplit.setDividerLocation(0.62);
+            rightSplit.setDividerLocation(0.68);
+            inspectSplit.setDividerLocation(0.55);
+            consoleSplit.setDividerLocation(0.5);
+         }
+      });
+
+      this.editState();
+      updateStatus();
+   }
+
+   /* ------------------------- műveletek ------------------------- */
+
+   private void buildActions() {
+      this.loadAction = new AbstractAction("Betölt") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent ev) {
+            if (!Workbench.this.progTextChanged
+                || JOptionPane.showConfirmDialog(Workbench.this,
+                      "A programszöveg változásai nincsenek elmentve. Biztosan be akarsz tölteni egy új fájlt?",
+                      "Betöltés", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) == 0) {
+               if (Workbench.this.fileChooser.showOpenDialog(Workbench.this)
+                      == JFileChooser.APPROVE_OPTION) {
+                  Workbench.this.loadFile(Workbench.this.fileChooser.getSelectedFile());
+               }
+            }
+         }
+      };
+
+      this.saveAction = new AbstractAction("Ment") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent ev) {
+            if (Workbench.this.fileChooser.showSaveDialog(Workbench.this)
+                   == JFileChooser.APPROVE_OPTION
+                && (!Workbench.this.fileChooser.getSelectedFile().exists()
+                    || JOptionPane.showConfirmDialog(Workbench.this,
+                          "A fájl létezik, felülírjam?", "Létező fájl",
+                          JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) == 0)) {
+               Workbench.this.saveFile(Workbench.this.fileChooser.getSelectedFile());
+            }
+         }
+      };
+
+      this.saveAsAction = new AbstractAction("Mentés másként…") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent ev) {
+            saveAction.actionPerformed(ev);
+         }
+      };
+
+      this.newAction = new AbstractAction("Új program") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent ev) {
+            if (Workbench.this.progTextChanged
+                && JOptionPane.showConfirmDialog(Workbench.this,
+                      "A programszöveg változásai nincsenek elmentve. Biztosan új programot kezdesz?",
+                      "Új program", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != 0) {
+               return;
+            }
+            Workbench.this.progText.setText(
+               "** Új PLanG program\n"
+               + "PROGRAM ujprogram\n"
+               + "VÁLTOZÓK:\n"
+               + "  x: EGÉSZ\n"
+               + "\n"
+               + "  BE: x\n"
+               + "  KI: x\n"
+               + "PROGRAM_VÉGE\n");
+            Workbench.this.progText.setCaretPosition(0);
+            Workbench.this.progTextChanged = false;
+            Workbench.this.currentFile = null;
+            Workbench.this.editorTabs.setTitle("editor", "névtelen.plang");
+            Workbench.this.editorTabs.setDirty("editor", false);
+            Workbench.this.setFrameTitle("PLanG");
+            Workbench.this.editState();
+            Workbench.this.refreshOutline();
+         }
+      };
+
+      this.parseAction = new AbstractAction("Értelmez") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent ev) {
+            try {
+               MainProgram prog = MainProgram.parseMainProgram(
+                  new Lexer(new StringReader(Workbench.this.progText.getText())));
+               ((ProgramList) Workbench.this.progList.getModel()).setProgram(prog);
+               Workbench.this.listState();
+               boolean ok = !prog.hasError();
+               Workbench.this.runAction.setEnabled(ok);
+               Workbench.this.copyAction.setEnabled(ok);
+               if (ok) {
+                  Workbench.this.updatePanes(Workbench.this.inpPanes,
+                                             prog.getStreams(StreamKind.INPUT), true);
+                  Workbench.this.updatePanes(Workbench.this.outPanes,
+                                             prog.getStreams(StreamKind.OUTPUT), false);
+               }
+               Workbench.this.markErrors(prog);
+               Workbench.this.refreshOutline();
+               Workbench.this.updateStatus();
+            } catch (Throwable t) {
+               if ("off".equals(System.getProperty("hu.ppke.itk.plang.errorDlg"))) {
+                  throw new RuntimeException(t);
+               }
+               JOptionPane.showMessageDialog(Workbench.this,
+                  "Belső hiba történt a szöveg értelmezése közben.", "HIBA",
+                  JOptionPane.ERROR_MESSAGE);
+            }
+         }
+      };
+
+      this.editAction = new AbstractAction("Szerkeszt") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent ev) {
+            Workbench.this.editState();
+         }
+      };
+
+      this.copyAction = new AbstractAction("Másol") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent ev) {
+            ProgramList lst = (ProgramList) Workbench.this.progList.getModel();
+            StringBuffer sb = new StringBuffer();
+            for (int i = 0; i < lst.getSize(); ++i) {
+               // A ProgLineRenderer.stripHtml a jelöléseket és az
+               // entitásokat is helyesen kezeli, ezért itt is azt
+               // használjuk – így a "<" és ">" operátorok megmaradnak.
+               sb.append(ProgLineRenderer.stripHtml(lst.getElementAt(i).toString())[0])
+                 .append("\n");
+            }
+            Workbench.this.progText.setText(sb.toString());
+            Workbench.this.progText.setCaretPosition(0);
+            Workbench.this.editState();
+            Workbench.this.refreshOutline();
+            Workbench.this.updateStatus();
+         }
+      };
+
+      this.runAction = new AbstractAction("Start") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent ev) {
+            MainProgram prog = ((ProgramList) Workbench.this.progList.getModel()).getProgram();
+            if (prog != null && !prog.hasError()) {
+               Map<String, String> input = new HashMap<String, String>();
+               for (int i = 0; i < Workbench.this.inpPanes.count(); ++i) {
+                  input.put(Workbench.this.inpPanes.getTitleAt(i),
+                            getDocument(Workbench.this.inpPanes, i).getText());
+               }
+
+               CallStack cs = (CallStack) Workbench.this.callStack.getModel();
+               try {
+                  Map<String, StreamData> output = new TreeMap<String, StreamData>();
+                  State last = cs.runProgram(prog, input, output);
+
+                  for (int i = 0; i < Workbench.this.outPanes.count(); ++i) {
+                     getDocument(Workbench.this.outPanes, i)
+                        .setStream(output.get(Workbench.this.outPanes.getTitleAt(i)));
+                  }
+
+                  Workbench.this.runState();
+                  Workbench.this.lastStepCount = Workbench.this.stateTable.getRowCount();
+                  Workbench.this.stateTable.setRowSelectionInterval(
+                     Workbench.this.stateTable.getRowCount() - 1,
+                     Workbench.this.stateTable.getRowCount() - 1);
+                  Workbench.this.stateTable.scrollRectToVisible(
+                     Workbench.this.stateTable.getCellRect(
+                        Workbench.this.stateTable.getSelectedRow(),
+                        Math.max(0, Workbench.this.stateTable.getSelectedColumn()), true));
+                  Workbench.this.autoSizeStateColumns();
+                  Workbench.this.updateStatus();
+
+                  if (last.getError() != null) {
+                     JOptionPane.showMessageDialog(Workbench.this,
+                        "A program futása a következő hiba miatt megszakadt:\n" + last.getError(),
+                        "Futási hiba", JOptionPane.WARNING_MESSAGE);
+                  }
+               } catch (OutOfMemoryError var8) {
+                  JOptionPane.showMessageDialog(Workbench.this,
+                     "Elfogyott a memória a program futásának szimulációja során.\n"
+                     + "Próbálkozz kevesebb lépést végrehajtani, vagy kisebb tömböket használni.",
+                     "Hiba", JOptionPane.ERROR_MESSAGE);
+               } catch (Throwable t) {
+                  if ("off".equals(System.getProperty("hu.ppke.itk.plang.errorDlg"))) {
+                     throw new RuntimeException(t);
+                  }
+                  JOptionPane.showMessageDialog(Workbench.this,
+                     "Belső hiba történt a program futásának szimulációja közben.", "HIBA",
+                     JOptionPane.ERROR_MESSAGE);
+               }
+            }
+         }
+      };
+
+      this.stopAction = new AbstractAction("Stop") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent e) {
+            CallStack cs = (CallStack) Workbench.this.callStack.getModel();
+            cs.runProgram(null, null, null);
+            setStreamStates(Workbench.this.inpPanes, null);
+            for (int i = 0; i < Workbench.this.outPanes.count(); ++i) {
+               getDocument(Workbench.this.outPanes, i).setStream(null);
+            }
+            Workbench.this.stopState();
+         }
+      };
+
+      this.enterAction = new AbstractAction("Belépés") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent e) {
+            TreePath path = Workbench.this.exprTree.getSelectionPath();
+            if (path == null) {
+               return;
+            }
+            ExprNode n = (ExprNode) path.getLastPathComponent();
+            List<State> sp = n.getSubStates();
+            if (sp != null) {
+               ((CallStack) Workbench.this.callStack.getModel()).enter(n.toString(), sp);
+            }
+            Workbench.this.leaveAction.setEnabled(true);
+            Workbench.this.updateStatus();
+         }
+      };
+
+      this.leaveAction = new AbstractAction("Kilépés") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent e) {
+            ((CallStack) Workbench.this.callStack.getModel()).leave();
+            if (Workbench.this.callStack.getModel().getSize() <= 1) {
+               Workbench.this.leaveAction.setEnabled(false);
+            }
+            Workbench.this.updateStatus();
+         }
+      };
+
+      this.showPreferences = new AbstractAction("Beállítások") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent e) {
+            if (Workbench.this.prefs().showDlg()) {
+               Workbench.this.textFont = Workbench.this.prefs().getTextFont();
+               Workbench.this.progText.setShowIndentGuides(
+                  Workbench.this.prefs().isShowIndentGuides());
+               Workbench.this.updateFont();
+               ((CallStack) Workbench.this.callStack.getModel())
+                  .setMaxSteps(Workbench.this.prefs().getStepNum());
+               if (Workbench.this.prefs().getThemeMode() != Theme.mode()) {
+                  Theme.setMode(Workbench.this.prefs().getThemeMode());
+                  Workbench.this.applyThemeToAll();
+               }
+               Workbench.this.updateStatus();
+            }
+         }
+      };
+
+      this.toggleThemeAction = new AbstractAction("Téma váltása") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent e) {
+            Theme.toggleMode();
+            if (Workbench.this.prefDialog != null) {
+               // csak akkor szinkronizálunk, ha a párbeszédablak már létezik
+               Workbench.this.prefDialog.setThemeMode(Theme.mode());
+            }
+            Workbench.this.applyThemeToAll();
+            Workbench.this.updateStatus();
+         }
+      };
+
+      this.findAction = new AbstractAction("Keresés") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent e) {
+            Workbench.this.progCards.show(Workbench.this.progPanel, PROGTEXT);
+            Workbench.this.editorTabs.select("editor");
+            Workbench.this.findBar.showBar(Workbench.this.progText.getSelectedText());
+         }
+      };
+
+      this.helpAction = new AbstractAction("Súgó") {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent e) {
+            showHelp();
+         }
+      };
+
+      this.loadAction.putValue(Action.SHORT_DESCRIPTION, "Betöltés  (Ctrl+O)");
+      this.saveAction.putValue(Action.SHORT_DESCRIPTION, "Kimentés  (Ctrl+S)");
+      this.newAction.putValue(Action.SHORT_DESCRIPTION, "Új program  (Ctrl+N)");
+      this.parseAction.putValue(Action.SHORT_DESCRIPTION, "Programszöveg értelmezése  (Ctrl+B)");
+      this.editAction.putValue(Action.SHORT_DESCRIPTION, "Szerkesztés");
+      this.copyAction.putValue(Action.SHORT_DESCRIPTION, "Értelmezett program szerkesztése");
+      this.runAction.putValue(Action.SHORT_DESCRIPTION, "Futtatás  (F5)");
+      this.stopAction.putValue(Action.SHORT_DESCRIPTION, "Futtatás vége  (Shift+F5)");
+      this.stopAction.setEnabled(false);
+      this.enterAction.putValue(Action.SHORT_DESCRIPTION, "Belépés alprogramba  (F11)");
+      this.enterAction.setEnabled(false);
+      this.leaveAction.putValue(Action.SHORT_DESCRIPTION, "Alprogram elhagyása  (Shift+F11)");
+      this.leaveAction.setEnabled(false);
+      this.showPreferences.putValue(Action.SHORT_DESCRIPTION, "Beállítások  (Ctrl+,)");
+      this.toggleThemeAction.putValue(Action.SHORT_DESCRIPTION, "Világos / sötét téma");
+      this.findAction.putValue(Action.SHORT_DESCRIPTION, "Keresés  (Ctrl+F)");
+      this.helpAction.putValue(Action.SHORT_DESCRIPTION, "Nyelvi súgó  (F1)");
+   }
+
+   /* ------------------------ komponensek ------------------------ */
+
+   private void buildComponents() {
+      /* --- értelmezett program listája --- */
+      this.progRenderer = new ProgLineRenderer(this.textFont);
+      this.progList = new JList(new ProgramList());
+      this.progList.setCellRenderer(this.progRenderer);
+      this.progList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+      this.progList.setBackground(Theme.p().editorBg);
+      this.progList.setFixedCellHeight(20);
+
+      /* --- szerkesztő --- */
+      this.progText = new CodeEditor();
+      this.progText.setEditorFont(this.textFont);
+      this.progText.getDocument().addDocumentListener(new DocumentListener() {
+         public void changedUpdate(DocumentEvent e) {
+            markChanged();
+         }
+
+         public void insertUpdate(DocumentEvent e) {
+            markChanged();
+         }
+
+         public void removeUpdate(DocumentEvent e) {
+            markChanged();
+         }
+
+         private void markChanged() {
+            Workbench.this.progTextChanged = true;
+            Workbench.this.editorTabs.setDirty("editor", true);
+            Workbench.this.refreshOutline();
+            Workbench.this.updateStatus();
+         }
+      });
+      this.progText.addCaretListener(new javax.swing.event.CaretListener() {
+         public void caretUpdate(javax.swing.event.CaretEvent e) {
+            updateStatus();
+         }
+      });
+
+      /* --- kifejezésfa --- */
+      this.exprRenderer = new ExprRenderer(this.textFont);
+      this.exprTree = new JTree(new ExprTree());
+      this.exprTree.setCellRenderer(this.exprRenderer);
+      this.exprTree.setShowsRootHandles(true);
+      this.exprTree.setRootVisible(true);
+      this.exprTree.setBackground(Theme.p().panelBg);
+      this.exprTree.getSelectionModel().setSelectionMode(
+         javax.swing.tree.TreeSelectionModel.SINGLE_TREE_SELECTION);
+
+      /* --- változótábla --- */
+      this.stateTable = new JTable(new StateList());
+      this.stateRenderer = new StateCellRenderer(this.textFont);
+      this.stateTable.setDefaultRenderer(Object.class, this.stateRenderer);
+      this.stateTable.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+      this.stateTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+      this.stateTable.setShowGrid(false);
+      this.stateTable.setIntercellSpacing(new Dimension(0, 0));
+      this.stateTable.setBackground(Theme.p().panelBg);
+      this.stateTable.setFillsViewportHeight(true);
+      JTableHeader th = this.stateTable.getTableHeader();
+      th.setReorderingAllowed(false);
+      th.setDefaultRenderer(new HeaderRenderer());
+      th.setPreferredSize(new Dimension(10, 26));
+
+      /* --- hívási verem --- */
+      this.callStack = new JList(new CallStack((StateList) this.stateTable.getModel(),
+                                               DEFAULT_STEPS));
+      this.callStack.setBackground(Theme.p().panelBg);
+      this.callStack.setCellRenderer(new CallStackRenderer());
+      this.callStack.setFixedCellHeight(22);
+
+      /* --- csatornák --- */
+      this.inpPanes = new StreamTabs(StreamKind.INPUT);
+      this.outPanes = new StreamTabs(StreamKind.OUTPUT);
+
+      /* --- figyelők (az eredeti logikával) --- */
+      this.selProgLine = new ListSelectionListener() {
+         public void valueChanged(ListSelectionEvent ev) {
+            if (!ev.getValueIsAdjusting()) {
+               ProgramLine line = (ProgramLine) Workbench.this.progList.getSelectedValue();
+               if (line != null) {
+                  ((ExprTree) Workbench.this.exprTree.getModel()).setRoot(line.getExpr(null));
+               } else {
+                  ((ExprTree) Workbench.this.exprTree.getModel()).setRoot(null);
+               }
+               expandExprTree();
+            }
+         }
+      };
+      this.progList.addListSelectionListener(this.selProgLine);
+
+      this.selProgState = new ListSelectionListener() {
+         public void valueChanged(ListSelectionEvent ev) {
+            if (!ev.getValueIsAdjusting()) {
+               State state = ((StateList) Workbench.this.stateTable.getModel())
+                  .getState(Workbench.this.stateTable.getSelectedRow());
+               if (state == null) {
+                  Workbench.this.progList.setSelectedIndex(-1);
+                  ((ExprTree) Workbench.this.exprTree.getModel()).setRoot(ExprNode.EMPTY);
+                  Workbench.this.progRenderer.setCurrentLine(-1);
+                  Workbench.this.progText.setRunningLine(-1);
+               } else {
+                  ProgramLine line = (ProgramLine) Workbench.this.progList.getModel()
+                     .getElementAt(state.getLine());
+                  if (state.getError() == null) {
+                     Workbench.this.progList.setSelectedIndex(state.getLine());
+                     Workbench.this.progList.ensureIndexIsVisible(
+                        Workbench.this.progList.getSelectedIndex());
+                     ((ExprTree) Workbench.this.exprTree.getModel()).setRoot(line.getExpr(state));
+                  } else {
+                     Workbench.this.progList.setSelectedIndex(state.getLine());
+                     ((ExprTree) Workbench.this.exprTree.getModel()).setRoot(
+                        new ExprNode("<font color=\"" + Theme.errorHex() + "\">"
+                                     + state.getError() + "</font>", new ExprNode[0], (String) null));
+                  }
+                  Workbench.this.progRenderer.setCurrentLine(state.getLine());
+                  Workbench.this.progList.repaint();
+                  setStreamStates(Workbench.this.inpPanes, state);
+                  setStreamStates(Workbench.this.outPanes, state);
+               }
+               expandExprTree();
+               Workbench.this.updateStatus();
+            }
+         }
+      };
+      this.stateTable.getSelectionModel().addListSelectionListener(this.selProgState);
+
+      this.selExprNode = new TreeSelectionListener() {
+         public void valueChanged(TreeSelectionEvent e) {
+            TreePath p = Workbench.this.exprTree.getSelectionPath();
+            if (p != null) {
+               ExprNode node = (ExprNode) p.getLastPathComponent();
+               Workbench.this.enterAction.setEnabled(node.getSubStates() != null);
+            } else {
+               Workbench.this.enterAction.setEnabled(false);
+            }
+         }
+      };
+      this.exprTree.getSelectionModel().addTreeSelectionListener(this.selExprNode);
+      this.exprTree.addMouseListener(new MouseAdapter() {
+         public void mouseClicked(MouseEvent e) {
+            if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() >= 2) {
+               if (Workbench.this.enterAction.isEnabled()) {
+                  Workbench.this.enterAction.actionPerformed(null);
+               }
+            }
+         }
+      });
+
+      /* --- kiemelt sorra ugrás az értelmezett listából --- */
+      this.progList.addMouseListener(new MouseAdapter() {
+         public void mouseClicked(MouseEvent e) {
+            if (e.getClickCount() >= 2) {
+               int idx = Workbench.this.progList.getSelectedIndex();
+               if (idx >= 0) {
+                  Workbench.this.editAction.actionPerformed(null);
+                  Workbench.this.progText.gotoLine(idx);
+               }
+            }
+         }
+      });
+   }
+
+   /* -------------------------- elrendezés -------------------------- */
+
+   private void buildLayout() {
+      JPanel root = new JPanel(new BorderLayout());
+      root.setBackground(Theme.p().editorBg);
+
+      /* ---------- tevékenységsáv ---------- */
+      activityBar = new ActivityBar();
+      activityBar.addView(VSIcons.FILES, "Kezelő  (Ctrl+Shift+E)", new Runnable() {
+         public void run() {
+            sideCards.show(sideBar, "explorer");
+         }
+      });
+      activityBar.addView(VSIcons.RUN, "Futtatás és hibakeresés  (Ctrl+Shift+D)", new Runnable() {
+         public void run() {
+            sideCards.show(sideBar, "run");
+         }
+      });
+      activityBar.addView(VSIcons.SEARCH, "Keresés  (Ctrl+Shift+F)", new Runnable() {
+         public void run() {
+            sideCards.show(sideBar, "search");
+            findAction.actionPerformed(null);
+         }
+      });
+      activityBar.addBottomAction(VSIcons.THEME, "Világos / sötét téma", new Runnable() {
+         public void run() {
+            toggleThemeAction.actionPerformed(null);
+         }
+      });
+      activityBar.addBottomAction(VSIcons.SETTINGS, "Beállítások  (Ctrl+,)", new Runnable() {
+         public void run() {
+            showPreferences.actionPerformed(null);
+         }
+      });
+
+      /* ---------- oldalsáv ---------- */
+      sideCards = new CardLayout();
+      sideBar = new JPanel(sideCards);
+      sideBar.setBackground(Theme.p().sideBar);
+      sideBar.add(buildExplorerPanel(), "explorer");
+      sideBar.add(buildRunPanel(), "run");
+      sideBar.add(buildSearchPanel(), "search");
+
+      /* ---------- szerkesztő terület ---------- */
+      editorTabs = new EditorTabBar();
+      editorTabs.addTab(new EditorTabBar.Tab("editor", "névtelen.plang", VSIcons.NEW, false));
+      editorTabs.addTab(new EditorTabBar.Tab("parsed", "Értelmezett program", VSIcons.PARSE, false));
+      editorTabs.setListener(new EditorTabBar.Listener() {
+         public void tabSelected(String id) {
+            if ("editor".equals(id)) {
+               if (editAction.isEnabled()) {
+                  editAction.actionPerformed(null);
+               } else {
+                  progCards.show(progPanel, PROGTEXT);
+               }
+            } else {
+               progCards.show(progPanel, PROGLIST);
+            }
+            updateStatus();
+         }
+
+         public void tabClosed(String id) {
+         }
+      });
+
+      progCards = new CardLayout();
+      progPanel = new JPanel(progCards);
+      progPanel.setBackground(Theme.p().editorBg);
+
+      // szerkesztő + sorszámsáv
+      gutter = new LineNumberGutter(progText);
+      gutter.setFont(textFont);
+      JPanel editorWrap = new JPanel(new BorderLayout());
+      editorWrap.setBackground(Theme.p().editorBg);
+      editorWrap.add(progText, BorderLayout.CENTER);
+      editorScroll = new JScrollPane(editorWrap);
+      editorScroll.setRowHeaderView(gutter);
+      editorScroll.getRowHeader().setBackground(Theme.p().editorBg);
+      FlatScrollBarUI.install(editorScroll);
+
+      JPanel editorHolder = new JPanel(new BorderLayout());
+      editorHolder.setBackground(Theme.p().editorBg);
+      findBar = new FindBar(progText);
+      editorHolder.add(findBar, BorderLayout.NORTH);
+      editorHolder.add(editorScroll, BorderLayout.CENTER);
+
+      listScroll = new JScrollPane(progList);
+      FlatScrollBarUI.install(listScroll);
+      listScroll.getViewport().setBackground(Theme.p().editorBg);
+
+      progPanel.add(editorHolder, PROGTEXT);
+      progPanel.add(listScroll, PROGLIST);
+
+      JPanel editorArea = new JPanel(new BorderLayout());
+      editorArea.setBackground(Theme.p().editorBg);
+      editorArea.add(editorTabs, BorderLayout.NORTH);
+      editorArea.add(progPanel, BorderLayout.CENTER);
+
+      /* ---------- alsó panel: be- és kimenet ---------- */
+      consoleSplit = new FlatSplitPane(JSplitPane.HORIZONTAL_SPLIT,
+                                       wrapStreamPanel(inpPanes, "Bemenet", VSIcons.INPUT),
+                                       wrapStreamPanel(outPanes, "Kimenet", VSIcons.OUTPUT));
+      consoleSplit.setResizeWeight(0.5);
+
+      centerSplit = new FlatSplitPane(JSplitPane.VERTICAL_SPLIT, editorArea, consoleSplit);
+      centerSplit.setResizeWeight(0.65);
+
+      /* ---------- jobb oldali vizsgálópanel ---------- */
+      JPanel varsPanel = new JPanel(new BorderLayout());
+      varsPanel.setBackground(Theme.p().panelBg);
+      varsHeader = new PanelHeader("Változók", VSIcons.VARIABLES, Theme.p().synType);
+      JScrollPane tableScrl = new JScrollPane(stateTable);
+      // a fejlécet kifejezetten beállítjuk, hogy a megjelenítés ne függjön
+      // a komponens-hierarchia felépítésének sorrendjétől
+      tableScrl.setColumnHeaderView(stateTable.getTableHeader());
+      FlatScrollBarUI.install(tableScrl);
+      tableScrl.getViewport().setBackground(Theme.p().panelBg);
+      tableScrl.getColumnHeader().setBackground(Theme.p().tableHeaderBg);
+      varsPanel.add(varsHeader, BorderLayout.NORTH);
+      varsPanel.add(tableScrl, BorderLayout.CENTER);
+
+      JPanel exprPanel = new JPanel(new BorderLayout());
+      exprPanel.setBackground(Theme.p().panelBg);
+      exprHeader = new PanelHeader("Kifejezés kiértékelése", VSIcons.TREE, Theme.p().synFunction);
+      FlatButton enterBtn = new FlatButton(FlatButton.TOOL,
+         VSIcons.icon(VSIcons.STEP_INTO, 16, Theme.p().sideBarFg), "Belépés alprogramba");
+      enterBtn.setAction(enterAction);
+      enterBtn.setPadding(4, 4);
+      FlatButton leaveBtn = new FlatButton(FlatButton.TOOL,
+         VSIcons.icon(VSIcons.STEP_OUT, 16, Theme.p().sideBarFg), "Alprogram elhagyása");
+      leaveBtn.setAction(leaveAction);
+      leaveBtn.setPadding(4, 4);
+      exprHeader.addAction(enterBtn);
+      exprHeader.addAction(leaveBtn);
+      JScrollPane exprScrl = new JScrollPane(exprTree);
+      FlatScrollBarUI.install(exprScrl);
+      exprScrl.getViewport().setBackground(Theme.p().panelBg);
+      exprPanel.add(exprHeader, BorderLayout.NORTH);
+      exprPanel.add(exprScrl, BorderLayout.CENTER);
+
+      inspectSplit = new FlatSplitPane(JSplitPane.VERTICAL_SPLIT, varsPanel, exprPanel);
+      inspectSplit.setResizeWeight(0.55);
+
+      // hívási verem (csak az alprogram-üzemmódban látszik, mint eredetileg)
+      callStackBox = new JPanel(new BorderLayout());
+      callStackBox.setBackground(Theme.p().panelBg);
+      stackHeader = new PanelHeader("Hívási verem", VSIcons.CALLSTACK, Theme.p().synControl);
+      JScrollPane csScroll = new JScrollPane(callStack);
+      FlatScrollBarUI.install(csScroll);
+      csScroll.getViewport().setBackground(Theme.p().panelBg);
+      csScroll.setPreferredSize(new Dimension(200, 92));
+      callStackBox.add(stackHeader, BorderLayout.NORTH);
+      callStackBox.add(csScroll, BorderLayout.CENTER);
+
+      JPanel inspector = new JPanel(new BorderLayout());
+      inspector.setBackground(Theme.p().panelBg);
+      // A hívási verem – az eredeti viselkedéssel egyezően – csak akkor
+      // látszik, ha az alprogram-üzemmód be van kapcsolva.
+      callStackBox.setVisible(subProgramsEnabled());
+      inspector.add(callStackBox, BorderLayout.NORTH);
+      inspector.add(inspectSplit, BorderLayout.CENTER);
+
+      rightSplit = new FlatSplitPane(JSplitPane.HORIZONTAL_SPLIT, centerSplit, inspector);
+      rightSplit.setResizeWeight(0.68);
+
+      mainSplit = new FlatSplitPane(JSplitPane.HORIZONTAL_SPLIT, sideBar, rightSplit);
+      mainSplit.setResizeWeight(0.0);
+
+      JPanel body = new JPanel(new BorderLayout());
+      body.setBackground(Theme.p().editorBg);
+      body.add(activityBar, BorderLayout.WEST);
+      body.add(mainSplit, BorderLayout.CENTER);
+
+      /* ---------- állapotsor ---------- */
+      statusBar = new StatusBar();
+      StatusBar.Cell run = statusBar.add("run", "Futtatás", false);
+      run.iconType = VSIcons.PLAY;
+      run.tooltip = "Program futtatása (F5)";
+      run.action = new Runnable() {
+         public void run() {
+            if (runAction.isEnabled()) {
+               runAction.actionPerformed(null);
+            } else if (parseAction.isEnabled()) {
+               parseAction.actionPerformed(null);
+            }
+         }
+      };
+      StatusBar.Cell diag = statusBar.add("diag", "0 hiba", false);
+      diag.iconType = VSIcons.ERROR;
+      diag.tooltip = "Fordítási hibák";
+      StatusBar.Cell steps = statusBar.add("steps", "", false);
+      steps.tooltip = "Végrehajtott lépések";
+
+      StatusBar.Cell pos = statusBar.add("pos", "Sor 1, Oszlop 1", true);
+      pos.tooltip = "A kurzor helye";
+      StatusBar.Cell enc = statusBar.add("enc", "ISO-8859-2", true);
+      enc.tooltip = "Fájl kódolása";
+      StatusBar.Cell lang = statusBar.add("lang", "PLanG", true);
+      lang.tooltip = "Nyelv";
+      StatusBar.Cell theme = statusBar.add("theme", "Sötét téma", true);
+      theme.tooltip = "Téma váltása";
+      theme.action = new Runnable() {
+         public void run() {
+            toggleThemeAction.actionPerformed(null);
+         }
+      };
+
+      root.add(body, BorderLayout.CENTER);
+      root.add(statusBar, BorderLayout.SOUTH);
+
+      add(root, BorderLayout.CENTER);
+   }
+
+   /** A munkafelület menüsora – a befoglaló ablak teszi ki. */
+   public javax.swing.JMenuBar getMenuBar() {
+      return menuBar;
+   }
+
+   /** Beállítja a kilépési kérés kezelőjét. */
+   public void setExitHandler(Runnable r) {
+      this.exitHandler = r;
+   }
+
+   /** Igaz, ha a programszöveg mentetlen módosítást tartalmaz. */
+   public boolean hasUnsavedChanges() {
+      return progTextChanged;
+   }
+
+   private void setFrameTitle(String t) {
+      if (owner != null) {
+         owner.setTitle(t);
+      }
+   }
+
+   /**
+    * Betölti a megadott fájlt a szerkesztőbe. A kódolás – az eredeti
+    * viselkedéssel egyezően – ISO-8859-2.
+    */
+   private void loadFile(File f) {
+      BufferedReader rd = null;
+      try {
+         rd = new BufferedReader(new InputStreamReader(new FileInputStream(f), "ISO-8859-2"));
+         StringBuffer sb = new StringBuffer();
+         for (String line = rd.readLine(); line != null; line = rd.readLine()) {
+            sb.append(line).append("\n");
+         }
+         this.progText.setText(sb.toString());
+         this.progText.setCaretPosition(0);
+         this.progTextChanged = false;
+         this.currentFile = f;
+         this.editorTabs.setTitle("editor", f.getName());
+         this.editorTabs.setDirty("editor", false);
+         this.setFrameTitle(f.getName() + " – PLanG");
+         this.progCards.show(this.progPanel, PROGTEXT);
+         this.editorTabs.select("editor");
+         this.refreshOutline();
+         this.updateStatus();
+      } catch (FileNotFoundException e) {
+         JOptionPane.showMessageDialog(this,
+            "Nem sikerült az olvasás a következö fájlból: " + e.getMessage(),
+            "Hiba a megnyitás során", JOptionPane.ERROR_MESSAGE);
+         System.err.println(e.getMessage());
+      } catch (IOException e) {
+         JOptionPane.showMessageDialog(this,
+            "Nem sikerült az olvasás a következő fájlból: " + e.getMessage(),
+            "Hiba az olvasás során", JOptionPane.ERROR_MESSAGE);
+         System.err.println(e.getMessage());
+      } finally {
+         if (rd != null) {
+            try {
+               rd.close();
+            } catch (IOException e) {
+               // nem lényeges
+            }
+         }
+      }
+   }
+
+   /** A szerkesztő tartalmát ISO-8859-2 kódolással a megadott fájlba írja. */
+   private void saveFile(File f) {
+      try {
+         PrintWriter wr = new PrintWriter(
+            new OutputStreamWriter(new FileOutputStream(f), "ISO-8859-2"));
+         wr.print(this.progText.getText());
+         wr.close();
+         this.progTextChanged = false;
+         this.currentFile = f;
+         this.editorTabs.setTitle("editor", f.getName());
+         this.editorTabs.setDirty("editor", false);
+         this.setFrameTitle(f.getName() + " – PLanG");
+         this.updateStatus();
+      } catch (IOException e) {
+         JOptionPane.showMessageDialog(this,
+            "Nem sikerült a mentés a következő fájlba: " + e.getMessage(),
+            "Hiba a mentés során", JOptionPane.ERROR_MESSAGE);
+         System.err.println(e.getMessage());
+      }
+   }
+
+   /** A beállítások párbeszédablaka – csak az első használatkor jön létre. */
+   /** A gyorsbillentyűk módosítóbillentyűje (fej nélküli módban is működik). */
+   private static int shortcutMask() {
+      try {
+         return Toolkit.getDefaultToolkit().getMenuShortcutKeyMask();
+      } catch (Throwable t) {
+         return java.awt.event.InputEvent.CTRL_MASK;
+      }
+   }
+
+   private PrefDialog prefs() {
+      if (this.prefDialog == null) {
+         this.prefDialog = new PrefDialog(owner);
+      }
+      return this.prefDialog;
+   }
+
+   private boolean subProgramsEnabled() {
+      return "on".equals(System.getProperty("hu.ppke.itk.plang.subprograms"));
+   }
+
+   /** Oldalsáv: kezelő nézet – műveletek és programvázlat. */
+   private JPanel buildExplorerPanel() {
+      JPanel p = new JPanel(new BorderLayout());
+      p.setBackground(Theme.p().sideBar);
+
+      PanelHeader head = new PanelHeader("Kezelő");
+      explorerHeader = head;
+
+      JPanel content = new JPanel(new BorderLayout());
+      content.setBackground(Theme.p().sideBar);
+
+      // gyors műveletek
+      JPanel actions = new JPanel(new GridLayout(0, 1, 0, 4));
+      actions.setBackground(Theme.p().sideBar);
+      actions.setBorder(BorderFactory.createEmptyBorder(8, 10, 10, 10));
+      actions.add(sideButton(newAction, VSIcons.NEW, "Új program"));
+      actions.add(sideButton(loadAction, VSIcons.OPEN, "Megnyitás…"));
+      actions.add(sideButton(saveAction, VSIcons.SAVE, "Mentés…"));
+
+      PanelHeader outlineHead = new PanelHeader("Vázlat", VSIcons.TREE, null);
+      outline = new OutlineList();
+      JScrollPane osc = new JScrollPane(outline);
+      FlatScrollBarUI.install(osc);
+      osc.getViewport().setBackground(Theme.p().sideBar);
+
+      outlinePanel = new JPanel(new BorderLayout());
+      outlinePanel.setBackground(Theme.p().sideBar);
+      outlinePanel.add(outlineHead, BorderLayout.NORTH);
+      outlinePanel.add(osc, BorderLayout.CENTER);
+
+      content.add(actions, BorderLayout.NORTH);
+      content.add(outlinePanel, BorderLayout.CENTER);
+
+      p.add(head, BorderLayout.NORTH);
+      p.add(content, BorderLayout.CENTER);
+      return p;
+   }
+
+   /** Oldalsáv: futtatás és hibakeresés nézet. */
+   private JPanel buildRunPanel() {
+      JPanel p = new JPanel(new BorderLayout());
+      p.setBackground(Theme.p().sideBar);
+      p.add(new PanelHeader("Futtatás és hibakeresés"), BorderLayout.NORTH);
+
+      JPanel content = new JPanel();
+      content.setLayout(new javax.swing.BoxLayout(content, javax.swing.BoxLayout.Y_AXIS));
+      content.setBackground(Theme.p().sideBar);
+      content.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+      FlatButton runBig = new FlatButton(FlatButton.PRIMARY, "Program futtatása");
+      runBig.setIcon(VSIcons.icon(VSIcons.PLAY, 15, Theme.p().buttonFg));
+      runBig.setAction(runAction);
+      runBig.setPadding(12, 7);
+      runBig.setAlignmentX(Component.LEFT_ALIGNMENT);
+      runBig.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+
+      FlatButton parseBtn = sideButton(parseAction, VSIcons.PARSE, "Értelmezés");
+      FlatButton stopBtn = sideButton(stopAction, VSIcons.STOP, "Futtatás vége");
+      FlatButton editBtn = sideButton(editAction, VSIcons.EDIT, "Szerkesztés");
+      FlatButton copyBtn = sideButton(copyAction, VSIcons.COPY, "Értelmezett átmásolása");
+
+      content.add(runBig);
+      content.add(javax.swing.Box.createVerticalStrut(8));
+      content.add(parseBtn);
+      content.add(javax.swing.Box.createVerticalStrut(4));
+      content.add(stopBtn);
+      content.add(javax.swing.Box.createVerticalStrut(12));
+      content.add(editBtn);
+      content.add(javax.swing.Box.createVerticalStrut(4));
+      content.add(copyBtn);
+
+      if (subProgramsEnabled()) {
+         content.add(javax.swing.Box.createVerticalStrut(12));
+         content.add(sideButton(enterAction, VSIcons.STEP_INTO, "Belépés alprogramba"));
+         content.add(javax.swing.Box.createVerticalStrut(4));
+         content.add(sideButton(leaveAction, VSIcons.STEP_OUT, "Alprogram elhagyása"));
+      }
+
+      content.add(javax.swing.Box.createVerticalGlue());
+
+      JPanel wrap = new JPanel(new BorderLayout());
+      wrap.setBackground(Theme.p().sideBar);
+      wrap.add(content, BorderLayout.NORTH);
+
+      p.add(wrap, BorderLayout.CENTER);
+      return p;
+   }
+
+   /** Oldalsáv: keresés nézet. */
+   private JPanel buildSearchPanel() {
+      JPanel p = new JPanel(new BorderLayout());
+      p.setBackground(Theme.p().sideBar);
+      p.add(new PanelHeader("Keresés"), BorderLayout.NORTH);
+
+      JPanel content = new JPanel(new BorderLayout());
+      content.setBackground(Theme.p().sideBar);
+      content.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+      JLabel hint = new JLabel("<html><body style='width:170px'>"
+         + "A kereséshez nyomd meg a <b>Ctrl+F</b> billentyűt, "
+         + "vagy használd a szerkesztő fölött megjelenő keresősávot.</body></html>");
+      hint.setForeground(Theme.p().sideBarFg);
+      hint.setFont(Theme.uiPlain());
+
+      FlatButton open = new FlatButton(FlatButton.SECONDARY, "Keresősáv megnyitása");
+      open.setIcon(VSIcons.icon(VSIcons.SEARCH, 14, Theme.p().buttonSecondaryFg));
+      open.setAction(findAction);
+
+      JPanel box = new JPanel(new BorderLayout(0, 10));
+      box.setBackground(Theme.p().sideBar);
+      box.add(hint, BorderLayout.NORTH);
+      box.add(open, BorderLayout.CENTER);
+
+      content.add(box, BorderLayout.NORTH);
+      p.add(content, BorderLayout.CENTER);
+      return p;
+   }
+
+   private FlatButton sideButton(Action a, int icon, String label) {
+      FlatButton b = new FlatButton(FlatButton.SECONDARY, label);
+      b.setIcon(VSIcons.icon(icon, 14, Theme.p().buttonSecondaryFg));
+      b.setAction(a);
+      b.setText(label);
+      b.setPadding(10, 6);
+      b.setAlignmentX(Component.LEFT_ALIGNMENT);
+      b.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+      return b;
+   }
+
+   private JPanel wrapStreamPanel(StreamTabs tabs, String title, int icon) {
+      JPanel p = new JPanel(new BorderLayout());
+      p.setBackground(Theme.p().panelBg);
+      PanelHeader h = new PanelHeader(title, icon,
+         icon == VSIcons.INPUT ? Theme.p().info : Theme.p().success);
+      p.add(h, BorderLayout.NORTH);
+      p.add(tabs, BorderLayout.CENTER);
+      return p;
+   }
+
+   /* ------------------------- menü, gyorsbillentyűk ------------------------- */
+
+   private void buildMenu() {
+      javax.swing.JMenuBar mb = new javax.swing.JMenuBar();
+      mb.setBackground(Theme.p().titleBar);
+      mb.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.p().border));
+
+      javax.swing.JMenu file = new javax.swing.JMenu("Fájl");
+      file.add(menuItem(newAction, KeyEvent.VK_N));
+      file.add(menuItem(loadAction, KeyEvent.VK_O));
+      file.add(menuItem(saveAction, KeyEvent.VK_S));
+      file.addSeparator();
+      javax.swing.JMenuItem exit = new javax.swing.JMenuItem("Kilépés");
+      exit.addActionListener(new java.awt.event.ActionListener() {
+         public void actionPerformed(ActionEvent e) {
+            if (exitHandler != null) {
+               exitHandler.run();
+            }
+         }
+      });
+      file.add(exit);
+
+      javax.swing.JMenu edit = new javax.swing.JMenu("Szerkesztés");
+      edit.add(menuItem(findAction, KeyEvent.VK_F));
+      edit.addSeparator();
+      javax.swing.JMenuItem comment = new javax.swing.JMenuItem("Megjegyzés ki/be   Ctrl+/");
+      comment.addActionListener(new java.awt.event.ActionListener() {
+         public void actionPerformed(ActionEvent e) {
+            progText.getActionMap().get("plang-comment").actionPerformed(e);
+         }
+      });
+      edit.add(comment);
+
+      javax.swing.JMenu runMenu = new javax.swing.JMenu("Futtatás");
+      runMenu.add(menuItem(parseAction, 0));
+      runMenu.add(menuItem(runAction, 0));
+      runMenu.add(menuItem(stopAction, 0));
+      runMenu.addSeparator();
+      runMenu.add(menuItem(editAction, 0));
+      runMenu.add(menuItem(copyAction, 0));
+      if (subProgramsEnabled()) {
+         runMenu.addSeparator();
+         runMenu.add(menuItem(enterAction, 0));
+         runMenu.add(menuItem(leaveAction, 0));
+      }
+
+      javax.swing.JMenu view = new javax.swing.JMenu("Nézet");
+      view.add(menuItem(toggleThemeAction, 0));
+      view.add(menuItem(showPreferences, 0));
+
+      javax.swing.JMenu help = new javax.swing.JMenu("Súgó");
+      help.add(menuItem(helpAction, 0));
+
+      mb.add(file);
+      mb.add(edit);
+      mb.add(runMenu);
+      mb.add(view);
+      mb.add(help);
+      this.menuBar = mb;
+   }
+
+   private javax.swing.JMenuItem menuItem(Action a, int key) {
+      javax.swing.JMenuItem mi = new javax.swing.JMenuItem(a);
+      if (key != 0) {
+         mi.setAccelerator(KeyStroke.getKeyStroke(key,
+            shortcutMask()));
+      }
+      return mi;
+   }
+
+   private void installShortcuts() {
+      JComponent root = this;
+      int mask = shortcutMask();
+
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "run", runAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F5, InputEvent.SHIFT_DOWN_MASK), "stop", stopAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_B, mask), "parse", parseAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_S, mask), "save", saveAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_O, mask), "open", loadAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_N, mask), "new", newAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F, mask), "find", findAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_COMMA, mask), "prefs", showPreferences);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), "help", helpAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F11, 0), "enter", enterAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F11, InputEvent.SHIFT_DOWN_MASK), "leave", leaveAction);
+   }
+
+   private void bind(JComponent c, KeyStroke ks, String name, final Action a) {
+      c.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(ks, name);
+      c.getActionMap().put(name, new AbstractAction() {
+         private static final long serialVersionUID = 1L;
+
+         public void actionPerformed(ActionEvent e) {
+            if (a.isEnabled()) {
+               a.actionPerformed(e);
+            }
+         }
+      });
+   }
+
+   /* --------------------------- segédműveletek --------------------------- */
+
+   private void expandExprTree() {
+      for (int i = 0; i < exprTree.getRowCount(); i++) {
+         exprTree.expandRow(i);
+      }
+   }
+
+   /** A hibás sorokat megjelöli a szerkesztőben és összeszámolja őket. */
+   private int errorCount;
+
+   private void markErrors(MainProgram prog) {
+      errorCount = 0;
+      int firstError = -1;
+      ProgramList lst = (ProgramList) progList.getModel();
+      for (int i = 0; i < lst.getSize(); i++) {
+         ProgramLine pl = lst.getElementAt(i);
+         if (pl.hasError()) {
+            errorCount++;
+            if (firstError < 0) {
+               firstError = i;
+            }
+         }
+      }
+      progText.setErrorLine(-1);
+      if (firstError >= 0) {
+         progList.setSelectedIndex(firstError);
+         progList.ensureIndexIsVisible(firstError);
+      }
+   }
+
+   private void autoSizeStateColumns() {
+      for (int c = 0; c < stateTable.getColumnCount(); c++) {
+         TableColumn col = stateTable.getColumnModel().getColumn(c);
+         int w = c == 0 ? 62 : 96;
+         java.awt.FontMetrics fm = stateTable.getFontMetrics(textFont);
+         int header = stateTable.getFontMetrics(Theme.uiSmallBold())
+                                .stringWidth(String.valueOf(stateTable.getColumnName(c))) + 26;
+         w = Math.max(w, header);
+         for (int r = 0; r < Math.min(stateTable.getRowCount(), 200); r++) {
+            Object v = stateTable.getValueAt(r, c);
+            if (v != null) {
+               String s = ProgLineRenderer.stripHtml(String.valueOf(v))[0];
+               w = Math.max(w, fm.stringWidth(s) + 22);
+            }
+         }
+         col.setPreferredWidth(Math.min(w, 260));
+         col.setWidth(Math.min(w, 260));
+      }
+   }
+
+   private void refreshOutline() {
+      if (outline != null) {
+         outline.rebuild(progText.getText());
+      }
+   }
+
+   private void updateStatus() {
+      if (statusBar == null) {
+         return;
+      }
+      statusBar.setText("pos", "Sor " + progText.caretLine() + ", Oszlop " + progText.caretColumn());
+      statusBar.setText("theme", Theme.isDark() ? "Sötét téma" : "Világos téma");
+      statusBar.setText("diag", errorCount == 0 ? "Nincs hiba" : (errorCount + " hiba"));
+      statusBar.setIcon("diag", errorCount == 0 ? VSIcons.CHECK : VSIcons.ERROR,
+                        errorCount == 0 ? null : Theme.p().statusFg);
+      if (running) {
+         statusBar.setText("run", "Fut – " + lastStepCount + " lépés");
+         statusBar.setIcon("run", VSIcons.STOP, null);
+         statusBar.setText("steps", "Lépés " + (stateTable.getSelectedRow() + 1)
+                                    + " / " + stateTable.getRowCount());
+      } else {
+         statusBar.setText("run", "Futtatás");
+         statusBar.setIcon("run", VSIcons.PLAY, null);
+         statusBar.setText("steps", "");
+      }
+   }
+
+   private void showHelp() {
+      String msg =
+         "<html><body style='width: 420px; font-family: sans-serif;'>"
+         + "<h2 style='margin-bottom:4px'>PLanG fejlesztőkörnyezet</h2>"
+         + "<p style='margin-top:0'>PPKE ITK – programozási alapismeretek</p>"
+         + "<h3>Billentyűparancsok</h3>"
+         + "<table cellpadding='2'>"
+         + "<tr><td><b>Ctrl+N</b></td><td>Új program</td></tr>"
+         + "<tr><td><b>Ctrl+O</b></td><td>Megnyitás</td></tr>"
+         + "<tr><td><b>Ctrl+S</b></td><td>Mentés</td></tr>"
+         + "<tr><td><b>Ctrl+B</b></td><td>Értelmezés</td></tr>"
+         + "<tr><td><b>F5</b></td><td>Futtatás</td></tr>"
+         + "<tr><td><b>Shift+F5</b></td><td>Futtatás vége</td></tr>"
+         + "<tr><td><b>Ctrl+F</b></td><td>Keresés</td></tr>"
+         + "<tr><td><b>Ctrl+/</b></td><td>Megjegyzés ki/be</td></tr>"
+         + "<tr><td><b>Ctrl+D</b></td><td>Sor megkettőzése</td></tr>"
+         + "<tr><td><b>Alt+↑ / Alt+↓</b></td><td>Sor mozgatása</td></tr>"
+         + "<tr><td><b>Tab / Shift+Tab</b></td><td>Behúzás növelése / csökkentése</td></tr>"
+         + "<tr><td><b>Ctrl+,</b></td><td>Beállítások</td></tr>"
+         + "</table>"
+         + "<h3>Nyelvi elemek</h3>"
+         + "<p><code>PROGRAM … PROGRAM_VÉGE</code>, <code>VÁLTOZÓK:</code>, "
+         + "<code>HA … AKKOR … KÜLÖNBEN … HA_VÉGE</code>, "
+         + "<code>CIKLUS … AMÍG … CIKLUS_VÉGE</code>, <code>BE:</code>, <code>KI:</code></p>"
+         + "<p>Típusok: <code>EGÉSZ, VALÓS, SZÖVEG, KARAKTER, LOGIKAI, BEFÁJL, KIFÁJL</code></p>"
+         + "</body></html>";
+      JOptionPane.showMessageDialog(this, msg, "Súgó", JOptionPane.INFORMATION_MESSAGE);
+   }
+
+   /* ---------------------------- témaváltás ---------------------------- */
+
+   /** A teljes felületet újraszínezi az aktuális téma szerint. */
+   public void applyThemeToAll() {
+      Theme.installUIDefaults();
+      StreamDocument.refreshStyles();
+
+      Theme.Palette p = Theme.p();
+      setBackground(p.editorBg);
+
+      activityBar.applyTheme();
+      sideBar.setBackground(p.sideBar);
+      editorTabs.applyTheme();
+      statusBar.applyTheme();
+      findBar.applyTheme();
+      progText.applyTheme();
+      gutter.applyTheme();
+
+      progPanel.setBackground(p.editorBg);
+      progList.setBackground(p.editorBg);
+      exprTree.setBackground(p.panelBg);
+      stateTable.setBackground(p.panelBg);
+      stateTable.getTableHeader().setBackground(p.tableHeaderBg);
+      callStack.setBackground(p.panelBg);
+
+      if (editorScroll != null) {
+         editorScroll.getViewport().setBackground(p.editorBg);
+         editorScroll.getRowHeader().setBackground(p.editorBg);
+         editorScroll.setBackground(p.editorBg);
+      }
+      if (listScroll != null) {
+         listScroll.getViewport().setBackground(p.editorBg);
+         listScroll.setBackground(p.editorBg);
+      }
+
+      inpPanes.applyTheme();
+      outPanes.applyTheme();
+
+      recolorTree(this);
+      SwingUtilities.updateComponentTreeUI(this);
+      if (menuBar != null) {
+         SwingUtilities.updateComponentTreeUI(menuBar);
+      }
+
+      // az updateComponentTreeUI visszaállíthat egyes egyedi megjelenéseket
+      reinstallCustomUI();
+      repaint();
+   }
+
+   private void reinstallCustomUI() {
+      FlatScrollBarUI.install(editorScroll);
+      FlatScrollBarUI.install(listScroll);
+      progText.applyTheme();
+      progText.setEditorFont(textFont);
+      gutter.applyTheme();
+      inpPanes.applyTheme();
+      outPanes.applyTheme();
+      stateTable.getTableHeader().setDefaultRenderer(new HeaderRenderer());
+      stateTable.setDefaultRenderer(Object.class, stateRenderer);
+      stateTable.setShowGrid(false);
+      callStack.setCellRenderer(new CallStackRenderer());
+      progList.setCellRenderer(progRenderer);
+      exprTree.setCellRenderer(exprRenderer);
+      if (menuBar != null) {
+         menuBar.setBackground(Theme.p().titleBar);
+         menuBar.setBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.p().border));
+      }
+   }
+
+   /** A paneleket rekurzívan a téma háttérszínére állítja. */
+   private void recolorTree(Component c) {
+      Theme.Palette p = Theme.p();
+      if (c instanceof PanelHeader) {
+         ((PanelHeader) c).applyTheme();
+      } else if (c instanceof JSplitPane) {
+         c.setBackground(p.border);
+      } else if (c instanceof JPanel) {
+         Color bg = c.getBackground();
+         // a paneleket a szerepük szerint színezzük
+         c.setBackground(p.sideBar);
+      }
+      if (c instanceof java.awt.Container) {
+         Component[] kids = ((java.awt.Container) c).getComponents();
+         for (int i = 0; i < kids.length; i++) {
+            recolorTree(kids[i]);
+         }
+      }
+   }
+
+   /* ------------------------- belső segédosztályok ------------------------- */
+
+   /** A változótábla fejlécének megjelenítése. */
+   private final class HeaderRenderer extends JComponent
+         implements javax.swing.table.TableCellRenderer {
+      private static final long serialVersionUID = 1L;
+      private String text = "";
+
+      public Component getTableCellRendererComponent(JTable table, Object value,
+                                                     boolean isSelected, boolean hasFocus,
+                                                     int row, int column) {
+         this.text = value == null ? "" : String.valueOf(value);
+         return this;
+      }
+
+      public Dimension getPreferredSize() {
+         return new Dimension(60, 26);
+      }
+
+      protected void paintComponent(Graphics g) {
+         Graphics2D g2 = (Graphics2D) g.create();
+         g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                             RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+         Theme.Palette p = Theme.p();
+         g2.setColor(p.tableHeaderBg);
+         g2.fillRect(0, 0, getWidth(), getHeight());
+         g2.setColor(p.border);
+         g2.drawLine(getWidth() - 1, 4, getWidth() - 1, getHeight() - 4);
+         g2.drawLine(0, getHeight() - 1, getWidth(), getHeight() - 1);
+         g2.setFont(Theme.uiSmallBold());
+         java.awt.FontMetrics fm = g2.getFontMetrics();
+         g2.setColor(p.sideBarTitleFg);
+         String t = text;
+         if (fm.stringWidth(t) > getWidth() - 10) {
+            while (t.length() > 1 && fm.stringWidth(t + "…") > getWidth() - 10) {
+               t = t.substring(0, t.length() - 1);
+            }
+            t = t + "…";
+         }
+         g2.drawString(t, 6, (getHeight() - fm.getHeight()) / 2 + fm.getAscent());
+         g2.dispose();
+      }
+   }
+
+   /** A hívási verem elemeinek megjelenítése. */
+   private final class CallStackRenderer extends JComponent
+         implements javax.swing.ListCellRenderer {
+      private static final long serialVersionUID = 1L;
+      private String text = "";
+      private boolean sel;
+      private boolean top;
+
+      public Component getListCellRendererComponent(JList list, Object value, int index,
+                                                    boolean isSelected, boolean cellHasFocus) {
+         this.text = ProgLineRenderer.stripHtml(String.valueOf(value))[0];
+         this.sel = isSelected;
+         this.top = (index == list.getModel().getSize() - 1);
+         return this;
+      }
+
+      public Dimension getPreferredSize() {
+         return new Dimension(120, 22);
+      }
+
+      protected void paintComponent(Graphics g) {
+         Graphics2D g2 = (Graphics2D) g.create();
+         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+         g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                             RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+         Theme.Palette p = Theme.p();
+         g2.setColor(sel ? p.listSelection : p.panelBg);
+         g2.fillRect(0, 0, getWidth(), getHeight());
+         if (top) {
+            VSIcons.icon(VSIcons.CHEVRON_RIGHT, 14, p.warning).paintIcon(this, g2, 4, 4);
+         }
+         g2.setFont(Theme.uiPlain());
+         java.awt.FontMetrics fm = g2.getFontMetrics();
+         g2.setColor(sel ? p.listSelectionFg : (top ? p.editorFg : p.gutterFg));
+         g2.drawString(text, 22, (getHeight() - fm.getHeight()) / 2 + fm.getAscent());
+         g2.dispose();
+      }
+   }
+
+   /** A programvázlat (alprogramok, változók) listája. */
+   private final class OutlineList extends JList {
+      private static final long serialVersionUID = 1L;
+      private final javax.swing.DefaultListModel model = new javax.swing.DefaultListModel();
+
+      OutlineList() {
+         setModel(model);
+         setBackground(Theme.p().sideBar);
+         setFixedCellHeight(22);
+         setCellRenderer(new javax.swing.ListCellRenderer() {
+            public Component getListCellRendererComponent(JList list, Object value, int index,
+                                                          boolean isSelected, boolean focus) {
+               return new OutlineCell((Object[]) value, isSelected);
+            }
+         });
+         addMouseListener(new MouseAdapter() {
+            public void mouseClicked(MouseEvent e) {
+               int i = getSelectedIndex();
+               if (i >= 0) {
+                  Object[] row = (Object[]) model.get(i);
+                  int line = ((Integer) row[2]).intValue();
+                  progCards.show(progPanel, PROGTEXT);
+                  editorTabs.select("editor");
+                  progText.gotoLine(line);
+                  progText.requestFocusInWindow();
+               }
+            }
+         });
+      }
+
+      void rebuild(String src) {
+         model.clear();
+         if (src == null) {
+            return;
+         }
+         String[] lines = src.split("\n", -1);
+         for (int i = 0; i < lines.length; i++) {
+            String t = lines[i].trim();
+            String low = hu.ppke.itk.plang.gui.editor.PlangSyntax.deacc(t);
+            if (low.startsWith("program ")) {
+               model.addElement(new Object[] { t.substring(8).trim(),
+                                               Integer.valueOf(VSIcons.NEW), Integer.valueOf(i) });
+            } else if (low.startsWith("eljaras ")) {
+               model.addElement(new Object[] { t.substring(8).trim(),
+                                               Integer.valueOf(VSIcons.RUN), Integer.valueOf(i) });
+            } else if (low.startsWith("fuggveny ")) {
+               model.addElement(new Object[] { t.substring(9).trim(),
+                                               Integer.valueOf(VSIcons.PARSE), Integer.valueOf(i) });
+            } else if (low.startsWith("valtozok")) {
+               model.addElement(new Object[] { "Változók",
+                                               Integer.valueOf(VSIcons.VARIABLES), Integer.valueOf(i) });
+            }
+         }
+         revalidate();
+         repaint();
+      }
+   }
+
+   /** A vázlat egy sora. */
+   private static final class OutlineCell extends JComponent {
+      private static final long serialVersionUID = 1L;
+      private final Object[] row;
+      private final boolean sel;
+
+      OutlineCell(Object[] row, boolean sel) {
+         this.row = row;
+         this.sel = sel;
+      }
+
+      public Dimension getPreferredSize() {
+         return new Dimension(150, 22);
+      }
+
+      protected void paintComponent(Graphics g) {
+         Graphics2D g2 = (Graphics2D) g.create();
+         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+         g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                             RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+         Theme.Palette p = Theme.p();
+         g2.setColor(sel ? p.listSelection : p.sideBar);
+         g2.fillRect(0, 0, getWidth(), getHeight());
+         int icon = ((Integer) row[1]).intValue();
+         VSIcons.icon(icon, 14, sel ? p.listSelectionFg : p.synFunction)
+                .paintIcon(this, g2, 8, (getHeight() - 14) / 2);
+         g2.setFont(Theme.uiPlain());
+         java.awt.FontMetrics fm = g2.getFontMetrics();
+         g2.setColor(sel ? p.listSelectionFg : p.sideBarFg);
+         g2.drawString(String.valueOf(row[0]), 28,
+                       (getHeight() - fm.getHeight()) / 2 + fm.getAscent());
+         g2.dispose();
+      }
+   }
+
+   /** A .plang kiterjesztés szűrője (az eredetivel megegyező). */
+   private class PlangFilter extends FileFilter {
+      private PlangFilter() {
+      }
+
+      public boolean accept(File f) {
+         if (f.isDirectory()) {
+            return true;
+         }
+         String n = f.getName();
+         return n.substring(n.lastIndexOf(46) + 1).toLowerCase().equals("plang");
+      }
+
+      public String getDescription() {
+         return "Plang programok (*.plang)";
+      }
+
+      PlangFilter(PlangFilter var2) {
+         this();
+      }
+   }
+}
