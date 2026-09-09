@@ -4,6 +4,7 @@ import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
@@ -161,12 +162,28 @@ public class Workbench extends JPanel {
    private PanelHeader exprHeader;
    private PanelHeader stackHeader;
    private JPanel callStackBox;
-   private JSplitPane mainSplit;
-   private JSplitPane rightSplit;
-   private JSplitPane inspectSplit;
-   private JSplitPane consoleSplit;
-   private JSplitPane centerSplit;
+   /* FlatSplitPane típus, hogy a témaváltás után az egyedi osztópanel-UI
+      visszaállítható legyen (updateComponentTreeUI lecserélné a LAF-éra). */
+   private FlatSplitPane mainSplit;
+   private FlatSplitPane rightSplit;
+   private FlatSplitPane inspectSplit;
+   private FlatSplitPane consoleSplit;
+   private FlatSplitPane centerSplit;
    private JPanel outlinePanel;
+   private JPanel varsPanel;
+   private JPanel exprPanel;
+   private JPanel inspectorPanel;
+   private JPanel inpWrap;
+   private JPanel outWrap;
+   private JScrollPane tableScrl;
+   private JScrollPane exprScrl;
+   private JScrollPane csScroll;
+   private JScrollPane outlineScrl;
+   private JPanel rootPanel;
+   private JPanel bodyPanel;
+   private JPanel editorAreaPanel;
+   private JPanel editorWrapPanel;
+   private JPanel editorHolderPanel;
    private OutlineList outline;
    private ProgLineRenderer progRenderer;
    private ExprRenderer exprRenderer;
@@ -314,8 +331,11 @@ public class Workbench extends JPanel {
       }
 
       this.fileChooser = new JFileChooser();
-      this.fileChooser.addChoosableFileFilter(new PlangFilter(null));
-      this.fileChooser.setFileFilter(this.fileChooser.getChoosableFileFilters()[0]);
+      /* Az "All Files" szűrő helyett a Plang-szűrő legyen az alapértelmezett. */
+      this.fileChooser.setAcceptAllFileFilterUsed(false);
+      PlangFilter pf = new PlangFilter(null);
+      this.fileChooser.addChoosableFileFilter(pf);
+      this.fileChooser.setFileFilter(pf);
 
       // recent files betöltése
       loadRecentFiles();
@@ -951,8 +971,9 @@ public class Workbench extends JPanel {
    /* -------------------------- elrendezés -------------------------- */
 
    private void buildLayout() {
-      JPanel root = new JPanel(new BorderLayout());
-      root.setBackground(Theme.p().editorBg);
+      rootPanel = new JPanel(new BorderLayout());
+      rootPanel.setBackground(Theme.p().editorBg);
+      JPanel root = rootPanel;
 
       activityBar = new ActivityBar();
       activityBar.addView(VSIcons.FILES, "Kezelő  (Ctrl+Shift+E)", new Runnable() {
@@ -1006,12 +1027,13 @@ public class Workbench extends JPanel {
 
       gutter = new LineNumberGutter(progText);
       gutter.setFont(textFont);
-      JPanel editorWrap = new JPanel(new BorderLayout());
-      editorWrap.setBackground(Theme.p().editorBg);
-      editorWrap.add(progText, BorderLayout.CENTER);
-      editorScroll = new JScrollPane(editorWrap);
+      editorWrapPanel = new JPanel(new BorderLayout());
+      editorWrapPanel.setBackground(Theme.p().editorBg);
+      editorWrapPanel.add(progText, BorderLayout.CENTER);
+      editorScroll = new JScrollPane(editorWrapPanel);
       editorScroll.setRowHeaderView(gutter);
       editorScroll.getRowHeader().setBackground(Theme.p().editorBg);
+      editorScroll.setBorder(BorderFactory.createEmptyBorder());
       FlatScrollBarUI.install(editorScroll);
       editorScroll.addMouseWheelListener(new MouseWheelListener() {
          public void mouseWheelMoved(MouseWheelEvent e) {
@@ -1026,11 +1048,12 @@ public class Workbench extends JPanel {
          }
       });
 
-      JPanel editorHolder = new JPanel(new BorderLayout());
-      editorHolder.setBackground(Theme.p().editorBg);
+      editorHolderPanel = new JPanel(new BorderLayout());
+      editorHolderPanel.setBackground(Theme.p().editorBg);
       findBar = new FindBar(progText);
-      editorHolder.add(findBar, BorderLayout.NORTH);
-      editorHolder.add(editorScroll, BorderLayout.CENTER);
+      editorHolderPanel.add(findBar, BorderLayout.NORTH);
+      editorHolderPanel.add(editorScroll, BorderLayout.CENTER);
+      JPanel editorHolder = editorHolderPanel;
 
       listScroll = new JScrollPane(progList);
       FlatScrollBarUI.install(listScroll);
@@ -1039,23 +1062,23 @@ public class Workbench extends JPanel {
       progPanel.add(editorHolder, PROGTEXT);
       progPanel.add(listScroll, PROGLIST);
 
-      JPanel editorArea = new JPanel(new BorderLayout());
-      editorArea.setBackground(Theme.p().editorBg);
-      editorArea.add(editorTabs, BorderLayout.NORTH);
-      editorArea.add(progPanel, BorderLayout.CENTER);
+      editorAreaPanel = new JPanel(new BorderLayout());
+      editorAreaPanel.setBackground(Theme.p().editorBg);
+      editorAreaPanel.add(editorTabs, BorderLayout.NORTH);
+      editorAreaPanel.add(progPanel, BorderLayout.CENTER);
 
-      consoleSplit = new FlatSplitPane(JSplitPane.HORIZONTAL_SPLIT,
-                                       wrapStreamPanel(inpPanes, "Bemenet", VSIcons.INPUT),
-                                       wrapStreamPanel(outPanes, "Kimenet", VSIcons.OUTPUT));
+      inpWrap = wrapStreamPanel(inpPanes, "Bemenet", VSIcons.INPUT);
+      outWrap = wrapStreamPanel(outPanes, "Kimenet", VSIcons.OUTPUT);
+      consoleSplit = new FlatSplitPane(JSplitPane.HORIZONTAL_SPLIT, inpWrap, outWrap);
       consoleSplit.setResizeWeight(0.5);
 
-      centerSplit = new FlatSplitPane(JSplitPane.VERTICAL_SPLIT, editorArea, consoleSplit);
+      centerSplit = new FlatSplitPane(JSplitPane.VERTICAL_SPLIT, editorAreaPanel, consoleSplit);
       centerSplit.setResizeWeight(0.65);
 
-      JPanel varsPanel = new JPanel(new BorderLayout());
+      varsPanel = new JPanel(new BorderLayout());
       varsPanel.setBackground(Theme.p().panelBg);
       varsHeader = new PanelHeader("Változók", VSIcons.VARIABLES, Theme.p().synType);
-      JScrollPane tableScrl = new JScrollPane(stateTable);
+      tableScrl = new JScrollPane(stateTable);
       tableScrl.setColumnHeaderView(stateTable.getTableHeader());
       FlatScrollBarUI.install(tableScrl);
       tableScrl.getViewport().setBackground(Theme.p().panelBg);
@@ -1063,7 +1086,7 @@ public class Workbench extends JPanel {
       varsPanel.add(varsHeader, BorderLayout.NORTH);
       varsPanel.add(tableScrl, BorderLayout.CENTER);
 
-      JPanel exprPanel = new JPanel(new BorderLayout());
+      exprPanel = new JPanel(new BorderLayout());
       exprPanel.setBackground(Theme.p().panelBg);
       exprHeader = new PanelHeader("Kifejezés kiértékelése", VSIcons.TREE, Theme.p().synFunction);
       FlatButton enterBtn = new FlatButton(FlatButton.TOOL,
@@ -1076,7 +1099,7 @@ public class Workbench extends JPanel {
       leaveBtn.setPadding(4, 4);
       exprHeader.addAction(enterBtn);
       exprHeader.addAction(leaveBtn);
-      JScrollPane exprScrl = new JScrollPane(exprTree);
+      exprScrl = new JScrollPane(exprTree);
       FlatScrollBarUI.install(exprScrl);
       exprScrl.getViewport().setBackground(Theme.p().panelBg);
       exprPanel.add(exprHeader, BorderLayout.NORTH);
@@ -1088,29 +1111,30 @@ public class Workbench extends JPanel {
       callStackBox = new JPanel(new BorderLayout());
       callStackBox.setBackground(Theme.p().panelBg);
       stackHeader = new PanelHeader("Hívási verem", VSIcons.CALLSTACK, Theme.p().synControl);
-      JScrollPane csScroll = new JScrollPane(callStack);
+      csScroll = new JScrollPane(callStack);
       FlatScrollBarUI.install(csScroll);
       csScroll.getViewport().setBackground(Theme.p().panelBg);
       csScroll.setPreferredSize(new Dimension(200, 92));
       callStackBox.add(stackHeader, BorderLayout.NORTH);
       callStackBox.add(csScroll, BorderLayout.CENTER);
 
-      JPanel inspector = new JPanel(new BorderLayout());
-      inspector.setBackground(Theme.p().panelBg);
+      inspectorPanel = new JPanel(new BorderLayout());
+      inspectorPanel.setBackground(Theme.p().panelBg);
       callStackBox.setVisible(subProgramsEnabled());
-      inspector.add(callStackBox, BorderLayout.NORTH);
-      inspector.add(inspectSplit, BorderLayout.CENTER);
+      inspectorPanel.add(callStackBox, BorderLayout.NORTH);
+      inspectorPanel.add(inspectSplit, BorderLayout.CENTER);
 
-      rightSplit = new FlatSplitPane(JSplitPane.HORIZONTAL_SPLIT, centerSplit, inspector);
+      rightSplit = new FlatSplitPane(JSplitPane.HORIZONTAL_SPLIT, centerSplit, inspectorPanel);
       rightSplit.setResizeWeight(0.68);
 
       mainSplit = new FlatSplitPane(JSplitPane.HORIZONTAL_SPLIT, sideBar, rightSplit);
       mainSplit.setResizeWeight(0.0);
 
-      JPanel body = new JPanel(new BorderLayout());
-      body.setBackground(Theme.p().editorBg);
-      body.add(activityBar, BorderLayout.WEST);
-      body.add(mainSplit, BorderLayout.CENTER);
+      bodyPanel = new JPanel(new BorderLayout());
+      bodyPanel.setBackground(Theme.p().editorBg);
+      bodyPanel.add(activityBar, BorderLayout.WEST);
+      bodyPanel.add(mainSplit, BorderLayout.CENTER);
+      JPanel body = bodyPanel;
 
       statusBar = new StatusBar();
       StatusBar.Cell run = statusBar.add("run", "Futtatás", false);
@@ -1414,13 +1438,14 @@ public class Workbench extends JPanel {
       actions.add(sideButton(saveAction, VSIcons.SAVE, "Mentés…"));
       PanelHeader outlineHead = new PanelHeader("Vázlat", VSIcons.TREE, null);
       outline = new OutlineList();
-      JScrollPane osc = new JScrollPane(outline);
-      FlatScrollBarUI.install(osc);
-      osc.getViewport().setBackground(Theme.p().sideBar);
+      outlineScrl = new JScrollPane(outline);
+      outlineScrl.setBorder(BorderFactory.createEmptyBorder());
+      FlatScrollBarUI.install(outlineScrl);
+      outlineScrl.getViewport().setBackground(Theme.p().sideBar);
       outlinePanel = new JPanel(new BorderLayout());
       outlinePanel.setBackground(Theme.p().sideBar);
       outlinePanel.add(outlineHead, BorderLayout.NORTH);
-      outlinePanel.add(osc, BorderLayout.CENTER);
+      outlinePanel.add(outlineScrl, BorderLayout.CENTER);
       content.add(actions, BorderLayout.NORTH);
       content.add(outlinePanel, BorderLayout.CENTER);
       p.add(head, BorderLayout.NORTH);
@@ -1749,76 +1774,200 @@ public class Workbench extends JPanel {
       Theme.installUIDefaults();
       StreamDocument.refreshStyles();
       Theme.Palette p = Theme.p();
+
+      /* Először a LAF delegáltjait frissítjük (a menü, a fájlválasztó és a
+         beállítások ablaka külön ablakfában él, azok nem részei ennek a
+         komponensfának), és csak utána állítjuk vissza az egyedi megjelenést.
+         Fordított sorrendben az updateComponentTreeUI felülírná a saját UI-kat
+         – például a lapos osztópanelekét, amitől világos osztóvonalak
+         maradnának sötét módban. */
+      try { SwingUtilities.updateComponentTreeUI(this); } catch (Exception e) {}
+      if (menuBar != null) {
+         try { SwingUtilities.updateComponentTreeUI(menuBar); } catch (Exception e) {}
+      }
+      if (fileChooser != null) {
+         try { SwingUtilities.updateComponentTreeUI(fileChooser); } catch (Exception e) {}
+      }
+      if (prefDialog != null) {
+         try { SwingUtilities.updateComponentTreeUI(prefDialog); } catch (Exception e) {}
+      }
+
       setBackground(p.editorBg);
-      activityBar.applyTheme();
-      sideBar.setBackground(p.sideBar);
-      editorTabs.applyTheme();
-      statusBar.applyTheme();
-      findBar.applyTheme();
-      progText.applyTheme();
-      gutter.applyTheme();
-      progPanel.setBackground(p.editorBg);
-      progList.setBackground(p.editorBg);
-      exprTree.setBackground(p.panelBg);
-      stateTable.setBackground(p.panelBg);
-      stateTable.getTableHeader().setBackground(p.tableHeaderBg);
-      callStack.setBackground(p.panelBg);
+      if (rootPanel != null) rootPanel.setBackground(p.editorBg);
+      if (bodyPanel != null) bodyPanel.setBackground(p.editorBg);
+      if (editorAreaPanel != null) editorAreaPanel.setBackground(p.editorBg);
+      if (editorWrapPanel != null) editorWrapPanel.setBackground(p.editorBg);
+      if (editorHolderPanel != null) editorHolderPanel.setBackground(p.editorBg);
+      if (activityBar != null) activityBar.applyTheme();
+      if (sideBar != null) sideBar.setBackground(p.sideBar);
+      if (editorTabs != null) editorTabs.applyTheme();
+      if (statusBar != null) statusBar.applyTheme();
+      if (findBar != null) findBar.applyTheme();
+      if (progText != null) progText.applyTheme();
+      if (gutter != null) gutter.applyTheme();
+      if (progPanel != null) progPanel.setBackground(p.editorBg);
+      if (progList != null) progList.setBackground(p.editorBg);
+      if (explorerHeader != null) explorerHeader.applyTheme();
+      if (varsHeader != null) varsHeader.applyTheme();
+      if (exprHeader != null) exprHeader.applyTheme();
+      if (stackHeader != null) stackHeader.applyTheme();
+      if (outlinePanel != null) outlinePanel.setBackground(p.sideBar);
+      if (outline != null) outline.setBackground(p.sideBar);
+      if (outlineScrl != null) {
+         outlineScrl.getViewport().setBackground(p.sideBar);
+         outlineScrl.setBackground(p.sideBar);
+         outlineScrl.setBorder(BorderFactory.createEmptyBorder());
+      }
+      if (varsPanel != null) varsPanel.setBackground(p.panelBg);
+      if (exprPanel != null) exprPanel.setBackground(p.panelBg);
+      if (inspectorPanel != null) inspectorPanel.setBackground(p.panelBg);
+      if (callStackBox != null) callStackBox.setBackground(p.panelBg);
+      if (inpWrap != null) inpWrap.setBackground(p.panelBg);
+      if (outWrap != null) outWrap.setBackground(p.panelBg);
+      if (exprTree != null) exprTree.setBackground(p.panelBg);
+      if (stateTable != null) {
+         stateTable.setBackground(p.panelBg);
+         stateTable.getTableHeader().setBackground(p.tableHeaderBg);
+      }
+      if (callStack != null) callStack.setBackground(p.panelBg);
+      if (tableScrl != null) {
+         tableScrl.getViewport().setBackground(p.panelBg);
+         tableScrl.setBackground(p.panelBg);
+         tableScrl.getColumnHeader().setBackground(p.tableHeaderBg);
+         tableScrl.setBorder(BorderFactory.createEmptyBorder());
+      }
+      if (exprScrl != null) {
+         exprScrl.getViewport().setBackground(p.panelBg);
+         exprScrl.setBackground(p.panelBg);
+         exprScrl.setBorder(BorderFactory.createEmptyBorder());
+      }
+      if (csScroll != null) {
+         csScroll.getViewport().setBackground(p.panelBg);
+         csScroll.setBackground(p.panelBg);
+         csScroll.setBorder(BorderFactory.createEmptyBorder());
+      }
       if (editorScroll != null) {
          editorScroll.getViewport().setBackground(p.editorBg);
          editorScroll.getRowHeader().setBackground(p.editorBg);
          editorScroll.setBackground(p.editorBg);
+         editorScroll.setBorder(BorderFactory.createEmptyBorder());
       }
       if (listScroll != null) {
          listScroll.getViewport().setBackground(p.editorBg);
          listScroll.setBackground(p.editorBg);
+         listScroll.setBorder(BorderFactory.createEmptyBorder());
       }
-      inpPanes.applyTheme();
-      outPanes.applyTheme();
-      recolorTree(this);
-      SwingUtilities.updateComponentTreeUI(this);
-      if (menuBar != null) {
-         SwingUtilities.updateComponentTreeUI(menuBar);
-      }
+      /* Az osztópanelek egyedi UI-ja az updateComponentTreeUI alatt elveszett,
+         itt kapják vissza. */
+      if (mainSplit != null) mainSplit.applyTheme();
+      if (rightSplit != null) rightSplit.applyTheme();
+      if (centerSplit != null) centerSplit.applyTheme();
+      if (inspectSplit != null) inspectSplit.applyTheme();
+      if (consoleSplit != null) consoleSplit.applyTheme();
+      if (inpPanes != null) inpPanes.applyTheme();
+      if (outPanes != null) outPanes.applyTheme();
       reinstallCustomUI();
+      /* Végül azok a panelek, amelyekre nincs direkt hivatkozásunk: ha a
+         háttérszín a másik témából maradt itt, a panel szerepe szerint
+         javítjuk. */
+      try { fixAllPanelBackgrounds(this, p); } catch (Exception e) {}
       repaint();
    }
 
-   private void reinstallCustomUI() {
-      FlatScrollBarUI.install(editorScroll);
-      FlatScrollBarUI.install(listScroll);
-      progText.applyTheme();
-      progText.setEditorFont(textFont);
-      gutter.applyTheme();
-      inpPanes.applyTheme();
-      outPanes.applyTheme();
-      stateTable.getTableHeader().setDefaultRenderer(new HeaderRenderer());
-      stateTable.setDefaultRenderer(Object.class, stateRenderer);
-      stateTable.setShowGrid(false);
-      callStack.setCellRenderer(new CallStackRenderer());
-      progList.setCellRenderer(progRenderer);
-      exprTree.setCellRenderer(exprRenderer);
-      if (menuBar != null) {
-         menuBar.setBackground(Theme.p().titleBar);
-         menuBar.setBorder(
-            BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.p().border));
+   /**
+    * Végigjárja a komponensfát, és azokat a paneleket, amelyek a másik témából
+    * maradt háttérszínt őriznek, az aktuális palettához igazítja. A panel
+    * szerepét a szülői lánc alapján döntjük el.
+    */
+   private void fixAllPanelBackgrounds(Container cont, Theme.Palette pal) {
+      Component[] kids = cont.getComponents();
+      for (int i = 0; i < kids.length; i++) {
+         Component c = kids[i];
+         if (c instanceof PanelHeader) {
+            /* A szekciócímek (köztük a Bemenet/Kimenet paneleké, amelyekre
+               nincs külön mezőnk) a LAF-csere után visszakapják a gyári
+               hátteret, ezért újra kell színezni őket. */
+            ((PanelHeader) c).applyTheme();
+         } else if (c instanceof JPanel) {
+            Color bg = c.getBackground();
+            if (bg != null) {
+               int avg = (bg.getRed() + bg.getGreen() + bg.getBlue()) / 3;
+               if (!Theme.isDark()) {
+                  if (avg < 60) {
+                     if (isDescendantOf(c, progPanel) || isDescendantOf(c, editorAreaPanel)
+                         || isDescendantOf(c, editorHolderPanel)
+                         || isDescendantOf(c, editorWrapPanel)) {
+                        c.setBackground(pal.editorBg);
+                     } else if (isDescendantOf(c, varsPanel) || isDescendantOf(c, exprPanel)
+                                || isDescendantOf(c, inspectorPanel)
+                                || isDescendantOf(c, callStackBox) || isDescendantOf(c, inpWrap)
+                                || isDescendantOf(c, outWrap)) {
+                        c.setBackground(pal.panelBg);
+                     } else {
+                        c.setBackground(pal.sideBar);
+                     }
+                  }
+               } else {
+                  if (avg > 220) {
+                     if (isDescendantOf(c, progPanel) || isDescendantOf(c, editorAreaPanel)) {
+                        c.setBackground(pal.editorBg);
+                     } else if (isDescendantOf(c, varsPanel) || isDescendantOf(c, exprPanel)) {
+                        c.setBackground(pal.panelBg);
+                     } else {
+                        c.setBackground(pal.sideBar);
+                     }
+                  }
+               }
+            }
+         } else if (c instanceof JScrollPane) {
+            ((JScrollPane) c).setBorder(BorderFactory.createEmptyBorder());
+         }
+         if (c instanceof Container) {
+            fixAllPanelBackgrounds((Container) c, pal);
+         }
       }
    }
 
-   private void recolorTree(Component c) {
+   private boolean isDescendantOf(Component child, Container ancestor) {
+      if (ancestor == null || child == null) return false;
+      Container p = child.getParent();
+      while (p != null) {
+         if (p == ancestor) return true;
+         p = p.getParent();
+      }
+      return false;
+   }
+
+   private void reinstallCustomUI() {
       Theme.Palette p = Theme.p();
-      if (c instanceof PanelHeader) {
-         ((PanelHeader) c).applyTheme();
-      } else if (c instanceof JSplitPane) {
-         c.setBackground(p.border);
-      } else if (c instanceof JPanel) {
-         c.setBackground(p.sideBar);
+      if (editorScroll != null) FlatScrollBarUI.install(editorScroll);
+      if (listScroll != null) FlatScrollBarUI.install(listScroll);
+      if (tableScrl != null) FlatScrollBarUI.install(tableScrl);
+      if (exprScrl != null) FlatScrollBarUI.install(exprScrl);
+      if (csScroll != null) FlatScrollBarUI.install(csScroll);
+      if (outlineScrl != null) FlatScrollBarUI.install(outlineScrl);
+      if (progText != null) {
+         progText.applyTheme();
+         progText.setEditorFont(textFont);
       }
-      if (c instanceof java.awt.Container) {
-         Component[] kids = ((java.awt.Container) c).getComponents();
-         for (int i = 0; i < kids.length; i++) {
-            recolorTree(kids[i]);
-         }
+      if (gutter != null) gutter.applyTheme();
+      if (inpPanes != null) inpPanes.applyTheme();
+      if (outPanes != null) outPanes.applyTheme();
+      if (stateTable != null) {
+         stateTable.getTableHeader().setDefaultRenderer(new HeaderRenderer());
+         stateTable.setDefaultRenderer(Object.class, stateRenderer);
+         stateTable.setShowGrid(false);
+         stateTable.setIntercellSpacing(new Dimension(0, 0));
       }
+      if (callStack != null) callStack.setCellRenderer(new CallStackRenderer());
+      if (progList != null) progList.setCellRenderer(progRenderer);
+      if (exprTree != null) exprTree.setCellRenderer(exprRenderer);
+      if (menuBar != null) {
+         menuBar.setBackground(p.titleBar);
+         menuBar.setBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, p.border));
+      }
+      if (fileChooser != null) fileChooser.setBackground(p.sideBar);
    }
 
    /* ------------------------- belső segédosztályok ------------------------- */
