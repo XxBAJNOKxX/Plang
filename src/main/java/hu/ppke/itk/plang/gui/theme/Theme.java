@@ -418,11 +418,26 @@ public final class Theme {
       put("Label.foreground", c.sideBarFg);
       put("Label.disabledForeground", c.gutterFg);
 
+      /* A Metal LAF a gombokat világos színátmenettel rajzolja, és a
+         Button.background/foreground párost jórészt figyelmen kívül hagyja –
+         sötét témában emiatt olvashatatlan (világos szöveg világos gombon) a
+         felirat a fájlválasztó és a JOptionPane ablakokban. A BasicButtonUI
+         átmenet nélkül, a témaszíneket használva rajzol. */
+      put("ButtonUI", "javax.swing.plaf.basic.BasicButtonUI");
+      put("Button.gradient", (Object) null);
       put("Button.background", c.buttonSecondaryBg);
       put("Button.foreground", c.buttonSecondaryFg);
       put("Button.select", c.buttonHover);
       put("Button.focus", c.focusBorder);
       put("Button.disabledText", c.gutterFg);
+      put("Button.highlight", c.buttonHover);
+      put("Button.shadow", c.widgetBorder);
+      put("Button.darkShadow", c.widgetBorder);
+      put("Button.light", c.buttonSecondaryBg);
+      put("Button.border", javax.swing.BorderFactory.createCompoundBorder(
+            javax.swing.BorderFactory.createLineBorder(c.widgetBorder),
+            javax.swing.BorderFactory.createEmptyBorder(4, 14, 4, 14)));
+      put("Button.margin", new java.awt.Insets(4, 14, 4, 14));
 
       put("ToggleButton.background", c.buttonSecondaryBg);
       put("ToggleButton.foreground", c.buttonSecondaryFg);
@@ -562,6 +577,8 @@ public final class Theme {
       put("FileChooser.foreground", c.sideBarFg);
       put("FileView.background", c.sideBar);
 
+      installHungarianTexts();
+
       put("controlText", c.sideBarFg);
       put("text", c.editorFg);
       put("window", c.panelBg);
@@ -569,6 +586,75 @@ public final class Theme {
       put("info", c.widgetBg);
       put("infoText", c.sideBarFg);
       put("nimbusLightBackground", c.editorBg);
+   }
+
+   /**
+    * A Swing beépített párbeszédablakainak (fájlválasztó, JOptionPane)
+    * magyar feliratai. A Swing csak néhány nyelvhez szállít fordítást, a
+    * magyar nincs köztük, ezért az UIManager kulcsait közvetlenül töltjük ki.
+    */
+   private static void installHungarianTexts() {
+      /* --- JOptionPane gombok --- */
+      put("OptionPane.yesButtonText", "Igen");
+      put("OptionPane.noButtonText", "Nem");
+      put("OptionPane.cancelButtonText", "Mégsem");
+      put("OptionPane.okButtonText", "OK");
+      put("OptionPane.titleText", "Üzenet");
+      put("OptionPane.inputDialogTitle", "Bevitel");
+      put("OptionPane.messageDialogTitle", "Üzenet");
+
+      /* --- fájlválasztó: gombok és címkék --- */
+      put("FileChooser.openDialogTitleText", "Megnyitás");
+      put("FileChooser.saveDialogTitleText", "Mentés");
+      put("FileChooser.lookInLabelText", "Hely:");
+      put("FileChooser.saveInLabelText", "Mentés ide:");
+      put("FileChooser.fileNameLabelText", "Fájlnév:");
+      put("FileChooser.filesOfTypeLabelText", "Fájltípus:");
+      put("FileChooser.upFolderToolTipText", "Egy szinttel feljebb");
+      put("FileChooser.upFolderAccessibleName", "Feljebb");
+      put("FileChooser.homeFolderToolTipText", "Saját könyvtár");
+      put("FileChooser.homeFolderAccessibleName", "Saját könyvtár");
+      put("FileChooser.newFolderToolTipText", "Új mappa létrehozása");
+      put("FileChooser.newFolderAccessibleName", "Új mappa");
+      put("FileChooser.newFolderButtonText", "Új mappa");
+      put("FileChooser.newFolderErrorText", "Nem sikerült létrehozni a mappát");
+      put("FileChooser.listViewButtonToolTipText", "Lista");
+      put("FileChooser.listViewButtonAccessibleName", "Lista");
+      put("FileChooser.detailsViewButtonToolTipText", "Részletek");
+      put("FileChooser.detailsViewButtonAccessibleName", "Részletek");
+      put("FileChooser.viewMenuButtonToolTipText", "Nézet");
+      put("FileChooser.fileNameHeaderText", "Név");
+      put("FileChooser.fileSizeHeaderText", "Méret");
+      put("FileChooser.fileTypeHeaderText", "Típus");
+      put("FileChooser.fileDateHeaderText", "Módosítva");
+      put("FileChooser.fileAttrHeaderText", "Attribútumok");
+      put("FileChooser.acceptAllFileFilterText", "Minden fájl");
+      put("FileChooser.openButtonText", "Megnyitás");
+      put("FileChooser.openButtonToolTipText", "A kijelölt fájl megnyitása");
+      put("FileChooser.saveButtonText", "Mentés");
+      put("FileChooser.saveButtonToolTipText", "A fájl mentése");
+      put("FileChooser.cancelButtonText", "Mégsem");
+      put("FileChooser.cancelButtonToolTipText", "Kilépés mentés nélkül");
+      put("FileChooser.updateButtonText", "Frissítés");
+      put("FileChooser.updateButtonToolTipText", "A lista frissítése");
+      put("FileChooser.helpButtonText", "Súgó");
+      put("FileChooser.helpButtonToolTipText", "Segítség a fájlválasztóhoz");
+      put("FileChooser.directoryOpenButtonText", "Megnyitás");
+      put("FileChooser.directoryOpenButtonToolTipText", "A kijelölt mappa megnyitása");
+      put("FileChooser.directoryDescriptionText", "Mappa");
+      put("FileChooser.fileDescriptionText", "Általános fájl");
+      put("FileChooser.filterLabelText", "Fájltípus:");
+      put("FileChooser.foldersLabelText", "Mappák");
+      put("FileChooser.filesLabelText", "Fájlok");
+      put("FileChooser.pathLabelText", "Elérési út:");
+      put("FileChooser.enterFileNameLabelText", "Fájlnév:");
+      put("FileChooser.renameFileButtonText", "Átnevezés");
+      put("FileChooser.deleteFileButtonText", "Törlés");
+
+      /* --- gyakori vezérlőfeliratok --- */
+      put("ColorChooser.okText", "OK");
+      put("ColorChooser.cancelText", "Mégsem");
+      put("ColorChooser.resetText", "Alaphelyzet");
    }
 
    private static void put(String key, Color value) {
