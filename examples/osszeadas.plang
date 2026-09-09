@@ -1,15 +1,15 @@
-** EgyszerÅ± pÃ©ldaprogram: kÃ©t szÃ¡m Ã¶sszege
+** Egyszerû példaprogram: két szám összege
 PROGRAM osszeadas
-VÃLTOZÃ“K:
-  a, b, osszeg: EGÃ‰SZ
+VÁLTOZÓK:
+  a, b, osszeg: EGÉSZ
 
 BE: a
 BE: b
 osszeg := a + b
-KI: "Az Ã¶sszeg: ", osszeg
+KI: "Az összeg: ", osszeg
 HA osszeg > 10 AKKOR
   KI: "Nagyobb mint tiz"
-KÃœLÃ–NBEN
+KÜLÖNBEN
   KI: "Legfeljebb tiz"
-HA_VÃ‰GE
-PROGRAM_VÃ‰GE
+HA_VÉGE
+PROGRAM_VÉGE

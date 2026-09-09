@@ -200,6 +200,15 @@ public class PrefDialog extends JDialog {
                       ((Integer) this.fontSize.getValue()).intValue());
    }
 
+   String getFontFamily() {
+      Object sel = this.fontCombo.getSelectedItem();
+      return sel == null ? Theme.monoFamily() : String.valueOf(sel);
+   }
+
+   int getFontSizeValue() {
+      return ((Integer) this.fontSize.getValue()).intValue();
+   }
+
    int getStepNum() {
       return ((Integer) this.stepNum.getValue()).intValue();
    }
@@ -216,6 +225,46 @@ public class PrefDialog extends JDialog {
 
    boolean isShowIndentGuides() {
       return this.indentGuides.isSelected();
+   }
+
+   void setFontFamily(String family) {
+      if (family != null) {
+         this.fontCombo.setSelectedItem(family);
+         // ha nincs a listában, hozzáadjuk
+         boolean found = false;
+         for (int i = 0; i < this.fontCombo.getItemCount(); i++) {
+            if (family.equals(this.fontCombo.getItemAt(i))) {
+               found = true;
+               break;
+            }
+         }
+         if (!found) {
+            this.fontCombo.addItem(family);
+            this.fontCombo.setSelectedItem(family);
+         }
+      }
+   }
+
+   void setFontSizeValue(int size) {
+      this.fontSize.setValue(Integer.valueOf(size));
+   }
+
+   void setStepNumValue(int n) {
+      this.stepNum.setValue(Integer.valueOf(n));
+   }
+
+   void setIndentGuides(boolean b) {
+      this.indentGuides.setSelected(b);
+   }
+
+   void setValues(Font font, int stepNum, int themeMode, boolean guides) {
+      if (font != null) {
+         setFontFamily(font.getFamily());
+         setFontSizeValue(font.getSize());
+      }
+      setStepNumValue(stepNum);
+      setThemeMode(themeMode);
+      setIndentGuides(guides);
    }
 
    private void save() {

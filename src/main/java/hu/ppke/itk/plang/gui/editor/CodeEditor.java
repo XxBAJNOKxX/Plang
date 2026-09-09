@@ -48,14 +48,18 @@ public class CodeEditor extends JTextPane {
    private int errorLine = -1;
    private int runningLine = -1;
 
+   private final PlangUndoManager undoManager = new PlangUndoManager();
+
    public CodeEditor() {
       super(new SyntaxDocument());
       // A hátteret magunk festjük (a díszítésekkel együtt), ezért az
       // ősosztály ne törölje le őket.
       setOpaque(false);
       setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+      getDocument().addUndoableEditListener(undoManager);
       applyTheme();
       installKeyBindings();
+      installContextMenu();
       addCaretListener(new CaretListener() {
          public void caretUpdate(CaretEvent e) {
             repaint();
@@ -65,6 +69,106 @@ public class CodeEditor extends JTextPane {
          public void changedUpdate(DocumentEvent e) { repaint(); }
          public void insertUpdate(DocumentEvent e) { repaint(); }
          public void removeUpdate(DocumentEvent e) { repaint(); }
+      });
+   }
+
+   public PlangUndoManager getUndoManager() {
+      return undoManager;
+   }
+
+   public void discardUndoHistory() {
+      undoManager.discardAllEdits();
+   }
+
+   public void undo() {
+      try {
+         if (undoManager.canUndo()) {
+            undoManager.undo();
+         }
+      } catch (Exception e) {
+         // nem kritikus
+      }
+   }
+
+   public void redo() {
+      try {
+         if (undoManager.canRedo()) {
+            undoManager.redo();
+         }
+      } catch (Exception e) {
+         // nem kritikus
+      }
+   }
+
+   private void installContextMenu() {
+      final javax.swing.JPopupMenu popup = new javax.swing.JPopupMenu();
+
+      final javax.swing.JMenuItem undoItem = new javax.swing.JMenuItem("Visszavonás");
+      undoItem.addActionListener(new java.awt.event.ActionListener() {
+         public void actionPerformed(java.awt.event.ActionEvent e) {
+            undo();
+         }
+      });
+      final javax.swing.JMenuItem redoItem = new javax.swing.JMenuItem("Újra");
+      redoItem.addActionListener(new java.awt.event.ActionListener() {
+         public void actionPerformed(java.awt.event.ActionEvent e) {
+            redo();
+         }
+      });
+      final javax.swing.JMenuItem cutItem = new javax.swing.JMenuItem("Kivágás");
+      cutItem.addActionListener(new java.awt.event.ActionListener() {
+         public void actionPerformed(java.awt.event.ActionEvent e) {
+            cut();
+         }
+      });
+      final javax.swing.JMenuItem copyItem = new javax.swing.JMenuItem("Másolás");
+      copyItem.addActionListener(new java.awt.event.ActionListener() {
+         public void actionPerformed(java.awt.event.ActionEvent e) {
+            copy();
+         }
+      });
+      final javax.swing.JMenuItem pasteItem = new javax.swing.JMenuItem("Beillesztés");
+      pasteItem.addActionListener(new java.awt.event.ActionListener() {
+         public void actionPerformed(java.awt.event.ActionEvent e) {
+            paste();
+         }
+      });
+      final javax.swing.JMenuItem selAllItem = new javax.swing.JMenuItem("Mind kijelölése");
+      selAllItem.addActionListener(new java.awt.event.ActionListener() {
+         public void actionPerformed(java.awt.event.ActionEvent e) {
+            selectAll();
+         }
+      });
+
+      popup.add(undoItem);
+      popup.add(redoItem);
+      popup.addSeparator();
+      popup.add(cutItem);
+      popup.add(copyItem);
+      popup.add(pasteItem);
+      popup.addSeparator();
+      popup.add(selAllItem);
+
+      popup.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
+         public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) {
+            undoItem.setEnabled(undoManager.canUndo());
+            redoItem.setEnabled(undoManager.canRedo());
+         }
+         public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {}
+         public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) {}
+      });
+
+      addMouseListener(new java.awt.event.MouseAdapter() {
+         public void mousePressed(java.awt.event.MouseEvent e) {
+            if (e.isPopupTrigger()) {
+               popup.show(e.getComponent(), e.getX(), e.getY());
+            }
+         }
+         public void mouseReleased(java.awt.event.MouseEvent e) {
+            if (e.isPopupTrigger()) {
+               popup.show(e.getComponent(), e.getX(), e.getY());
+            }
+         }
       });
    }
 

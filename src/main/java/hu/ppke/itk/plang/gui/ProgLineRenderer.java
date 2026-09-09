@@ -58,7 +58,7 @@ public class ProgLineRenderer implements ListCellRenderer {
     * A HTML jelölést egyszerű szöveggé alakítja, megjegyezve, mely
     * szakaszok voltak hibásra színezve.
     */
-   static String[] stripHtml(String html) {
+   public static String[] stripHtml(String html) {
       StringBuffer text = new StringBuffer();
       StringBuffer flags = new StringBuffer();
       boolean bad = false;

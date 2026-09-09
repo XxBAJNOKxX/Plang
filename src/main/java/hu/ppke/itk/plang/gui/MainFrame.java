@@ -45,6 +45,15 @@ public class MainFrame extends JFrame {
                       "A programszöveg változásai nincsenek elmentve. Biztosan ki akarsz lépni?",
                       "Kilépés", JOptionPane.YES_NO_OPTION,
                       JOptionPane.WARNING_MESSAGE) == JOptionPane.YES_OPTION) {
+               // beállítások mentése kilépéskor
+               try {
+                  workbench.savePrefs();
+                  AppPrefs.setWindowSize(getWidth(), getHeight());
+                  AppPrefs.setWindowPosition(getX(), getY());
+                  AppPrefs.flush();
+               } catch (Exception ex) {
+                  // nem kritikus
+               }
                MainFrame.this.dispose();
             }
          }
@@ -52,9 +61,31 @@ public class MainFrame extends JFrame {
 
       getContentPane().setBackground(Theme.p().editorBg);
       setMinimumSize(new Dimension(940, 600));
-      setPreferredSize(new Dimension(1440, 900));
+
+      // ablakméret és pozíció betöltése prefs-ből
+      int ww = 1440;
+      int wh = 900;
+      int wx = -1;
+      int wy = -1;
+      try {
+         ww = AppPrefs.getWindowWidth();
+         wh = AppPrefs.getWindowHeight();
+         wx = AppPrefs.getWindowX();
+         wy = AppPrefs.getWindowY();
+      } catch (Exception ex) {
+         // alapértelmezés marad
+      }
+      setPreferredSize(new Dimension(ww, wh));
       pack();
-      setLocationRelativeTo(null);
+      if (wx >= 0 && wy >= 0) {
+         try {
+            setLocation(wx, wy);
+         } catch (Exception ex) {
+            setLocationRelativeTo(null);
+         }
+      } else {
+         setLocationRelativeTo(null);
+      }
    }
 
    /** A főablak munkafelülete. */
