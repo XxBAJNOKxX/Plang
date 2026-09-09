@@ -100,5 +100,9 @@ src/main/java/hu/ppke/itk/plang/
     └── widgets/            tevékenységsáv, fülsor, állapotsor, gombok, keresősáv
 ```
 
+Az alkalmazásnak nincs külső függősége, és képfájlokat sem használ: minden
+ikon vektorosan, kódból rajzolódik (`widgets/VSIcons.java`), így tetszőleges
+felbontáson éles marad, és a téma színeit veszi fel.
+
 A `prog` csomag – a nyelv értelmezője – **érintetlen maradt**: a felújítás
 kizárólag a felhasználói felületet érinti, a nyelvi viselkedés bitre azonos.

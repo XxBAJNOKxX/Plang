@@ -33,8 +33,10 @@ else
    exit 1
 fi
 
-echo "==> Erőforrások másolása…"
-cp -r "$RES"/* "$OUT"/
+if [ -d "$RES" ]; then
+   echo "==> Erőforrások másolása…"
+   cp -r "$RES"/* "$OUT"/
+fi
 
 case "$1" in
    compile)
