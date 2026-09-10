@@ -1008,6 +1008,37 @@ public class FuncTest {
             fail("Kurzormozgás bezárja a listát: " + e);
         }
 
+        // --- 31c. Fel/le nyíl a kiegészítő listában (nem a kurzor) ---
+        // (korábban a nyilak a kurzort tolták, a Tab mindig az első elemet
+        //  – pl. KI → KIS – választotta, a KI:-t nem lehetett elérni)
+        try {
+            CodeEditor edNav = new CodeEditor();
+            edNav.setText("PROGRAM p\nVÁLTOZÓK:\n  x: EGÉSZ\n\n  KI");
+            edNav.setCaretPosition(edNav.getDocument().getLength());
+            java.util.List<String> ki = edNav.contextualCompletions("KI");
+            check(ki.contains("KIS") && ki.contains("KI:"),
+                  "KI előtagra a KIS és a KI: is javasolt (got " + ki + ")");
+
+            check(!edNav.moveCompletion(1) && edNav.selectedCompletionIndex() == -1,
+                  "moveCompletion lista nélkül hamis, index -1");
+
+            javax.swing.JList navList = new javax.swing.JList(new Object[]{"KIS", "KI:"});
+            navList.setSelectedIndex(0);
+            setField(edNav, "completionList", navList);
+            setField(edNav, "completionPrefix", "KI");
+            check(edNav.moveCompletion(1) && navList.getSelectedIndex() == 1
+                  && edNav.selectedCompletionIndex() == 1,
+                  "Le nyíl: KIS → KI:");
+            check(edNav.moveCompletion(1) && navList.getSelectedIndex() == 1,
+                  "Le nyíl a lista végén megáll");
+            check(edNav.moveCompletion(-1) && navList.getSelectedIndex() == 0,
+                  "Fel nyíl: KI: → KIS");
+            check(edNav.moveCompletion(-1) && navList.getSelectedIndex() == 0,
+                  "Fel nyíl a lista elején megáll");
+        } catch (Exception e) {
+            fail("Kiegészítés nyilak: " + e);
+        }
+
         // --- 32. Debugger: léptetés + töréspont ---
         try {
             Workbench wbG = new Workbench(null);
