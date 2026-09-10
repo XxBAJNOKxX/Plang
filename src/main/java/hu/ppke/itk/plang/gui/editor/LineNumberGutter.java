@@ -102,7 +102,7 @@ public class LineNumberGutter extends JPanel {
             }
 
             boolean isCurrent = (i == caretLine);
-            boolean isError = (i == editor.getErrorLine());
+            boolean isError = editor.isErrorLine(i);
 
             String num = String.valueOf(i + 1);
             g2.setColor(isError ? p.error : (isCurrent ? p.gutterActiveFg : p.gutterFg));

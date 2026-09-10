@@ -54,11 +54,18 @@ public class StateList extends AbstractTableModel {
          this.states = null;
          this.names = null;
          this.types = null;
-         this.fireTableRowsDeleted(0, l - 1);
+         if (l > 0) {
+            this.fireTableRowsDeleted(0, l - 1);
+         }
          this.fireTableStructureChanged();
       }
 
       if (stl != null) {
+         /* Üres állapotlista esetén nincs minek a nevét kigyűjteni: az
+            eredeti kód a states.get(0)-ra IndexOutOfBounds-szal szállt el. */
+         if (stl.isEmpty()) {
+            return;
+         }
          this.states = new Vector(stl);
          SortedSet<String> ns = new TreeSet(((State)this.states.get(0)).getVarNames());
          this.names = new Vector(ns);

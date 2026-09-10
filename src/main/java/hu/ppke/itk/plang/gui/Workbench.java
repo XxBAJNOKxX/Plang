@@ -195,8 +195,11 @@ public class Workbench extends JPanel {
 
    private int lastStepCount;
    private boolean running;
-   /** A futás végén magától kilép-e a futtatási módból (beállítás, alapból ki). */
-   private boolean autoStop = false;
+   /**
+    * Futás után visszaálljon-e a szerkesztő nézetre (beállítás, alapból ki).
+    * A tárolási kulcs történeti okokból {@code autoStop}.
+    */
+   private boolean backToEditor = false;
 
    /* ---- új mezők ---- */
    private JMenu recentMenu;
@@ -370,9 +373,9 @@ public class Workbench extends JPanel {
       this.fileChooser.setFileFilter(pf);
 
       try {
-         this.autoStop = AppPrefs.getAutoStop();
+         this.backToEditor = AppPrefs.getAutoStop();
       } catch (Exception e) {
-         this.autoStop = false;
+         this.backToEditor = false;
       }
 
       // recent files betöltése
@@ -640,7 +643,10 @@ public class Workbench extends JPanel {
             Workbench.this.progText.setText(sb.toString());
             Workbench.this.progText.discardUndoHistory();
             Workbench.this.progText.setCaretPosition(0);
-            Workbench.this.progTextChanged = false;
+            /* A visszamásolt szöveg eltérhet a lemez lévőtől, ezért a
+               „nincs mentve” állapotot is jelezni kell – különben a fülön
+               ott marad a piszkosság-pont, miközben a kilépés nem kérdez rá. */
+            Workbench.this.progTextChanged = true;
             Workbench.this.editorTabs.setDirty("editor", true);
             Workbench.this.editState();
             Workbench.this.refreshOutline();
@@ -683,10 +689,12 @@ public class Workbench extends JPanel {
                   Workbench.this.updateStatus();
 
                   boolean hadError = last.getError() != null;
-                  /* A futás végén (illetve hibára mindenképp) kilépünk a
-                     futtatási módból – az eredmény a képernyőn marad. */
-                  if (hadError || Workbench.this.autoStop) {
-                     Workbench.this.finishedState(hadError);
+                  /* A szimuláció itt már lefutott, így a „futás” állapotnak
+                     mindenképpen vége: az eredmény a képernyőn marad, de az
+                     állapotsor nem állítja többé azt, hogy a program futna. */
+                  Workbench.this.finishedState(hadError);
+                  if (Workbench.this.backToEditor) {
+                     Workbench.this.editState();
                   }
 
                   if (hadError) {
@@ -761,14 +769,14 @@ public class Workbench extends JPanel {
                          ((CallStack) Workbench.this.callStack.getModel()).getMaxSteps(),
                          Theme.mode(),
                          Workbench.this.progText.isShowIndentGuides(),
-                         Workbench.this.autoStop);
+                         Workbench.this.backToEditor);
             if (pd.showDlg()) {
                Workbench.this.textFont = pd.getTextFont();
                Workbench.this.progText.setShowIndentGuides(pd.isShowIndentGuides());
                Workbench.this.updateFont();
                ((CallStack) Workbench.this.callStack.getModel())
                   .setMaxSteps(pd.getStepNum());
-               Workbench.this.autoStop = pd.isAutoStop();
+               Workbench.this.backToEditor = pd.isAutoStop();
                if (pd.getThemeMode() != Theme.mode()) {
                   Theme.setMode(pd.getThemeMode());
                   Workbench.this.applyThemeToAll();
@@ -867,12 +875,20 @@ public class Workbench extends JPanel {
          this.progText.setShowIndentGuides(AppPrefs.getIndentGuides());
       } catch (Exception e) {}
       this.progText.getDocument().addDocumentListener(new DocumentListener() {
-         public void changedUpdate(DocumentEvent e) { markChanged(); }
+         /* A CHANGE típusú esemény attribútum-változást jelez, nem
+            szövegszerkesztést: ilyen jön a szintaxisszínezésből és a
+            betűtípus-állításból (setParagraphAttributes) is. Ha ezt is
+            módosításnak vennénk, az alkalmazás „mentetlen” állapotban
+            indulna, és egy betűméret-váltás piszkossá tenné a fájlt. */
+         public void changedUpdate(DocumentEvent e) { Workbench.this.updateStatus(); }
          public void insertUpdate(DocumentEvent e) { markChanged(); }
          public void removeUpdate(DocumentEvent e) { markChanged(); }
          private void markChanged() {
             Workbench.this.progTextChanged = true;
             Workbench.this.editorTabs.setDirty("editor", true);
+            /* A szöveg változott, ezért a jelzett hibák és az értelmezett
+               sorok megfeleltetése már nem érvényes. */
+            Workbench.this.clearErrorMarks();
             Workbench.this.refreshOutline();
             Workbench.this.updateStatus();
             Workbench.this.updateUndoRedo();
@@ -1009,7 +1025,9 @@ public class Workbench extends JPanel {
                int idx = Workbench.this.progList.getSelectedIndex();
                if (idx >= 0) {
                   Workbench.this.editAction.actionPerformed(null);
-                  Workbench.this.progText.gotoLine(idx);
+                  /* Az értelmezett sor indexe nem azonos a forrássoréval. */
+                  Workbench.this.progText.gotoLine(sourceLineForParsedIndex(idx));
+                  Workbench.this.progText.requestFocusInWindow();
                }
             }
          }
@@ -1199,7 +1217,10 @@ public class Workbench extends JPanel {
       };
       StatusBar.Cell diag = statusBar.add("diag", "0 hiba", false);
       diag.iconType = VSIcons.ERROR;
-      diag.tooltip = "Fordítási hibák";
+      diag.tooltip = "Fordítási hibák – kattintással a következő hibára ugrik";
+      diag.action = new Runnable() {
+         public void run() { gotoNextError(); }
+      };
       StatusBar.Cell steps = statusBar.add("steps", "", false);
       steps.tooltip = "Végrehajtott lépések";
       msgCell = statusBar.add("msg", "", false);
@@ -1227,6 +1248,10 @@ public class Workbench extends JPanel {
    public void setExitHandler(Runnable r) { this.exitHandler = r; }
    public boolean hasUnsavedChanges() { return progTextChanged; }
    public File getCurrentFile() { return currentFile; }
+   /** Az utolsó értelmezéskor jelzett hibák száma. */
+   public int getErrorCount() { return errorCount; }
+   /** A hibára ugrás (az állapotsor hiba-cellájának kattintása is ezt hívja). */
+   public void gotoError() { gotoNextError(); }
 
    private void setFrameTitle(String t) {
       if (owner != null) { owner.setTitle(t); }
@@ -1257,16 +1282,21 @@ public class Workbench extends JPanel {
    private void showTransientMessage(String text) {
       if (statusBar == null || msgCell == null) return;
       statusBar.setText("msg", text);
-      if (msgClearTimer != null) {
+      if (msgClearTimer == null) {
+         /* Egyetlen időzítőt használunk újra: különben minden üzenetnél
+            új Timer jönne létre, és a régiek szemétként maradnának. */
+         msgClearTimer = new Timer(3500, new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+               if (statusBar != null) {
+                  statusBar.setText("msg", "");
+               }
+            }
+         });
+         msgClearTimer.setRepeats(false);
+      } else {
          msgClearTimer.stop();
       }
-      msgClearTimer = new Timer(3500, new ActionListener() {
-         public void actionPerformed(ActionEvent e) {
-            statusBar.setText("msg", "");
-         }
-      });
-      msgClearTimer.setRepeats(false);
-      msgClearTimer.start();
+      msgClearTimer.restart();
    }
 
    /* ---- legutóbbi fájlok ---- */
@@ -1411,11 +1441,19 @@ public class Workbench extends JPanel {
    private void saveFile(File f) {
       if (f == null) return;
       File target = ensurePlangExtension(f);
+      /* A PrintWriter elnyeli az írási hibákat, ezért a checkError() nélkül
+         a mentés sikertelenül is „Mentve” üzenettel zárulna. */
+      PrintWriter wr = null;
       try {
-         PrintWriter wr = new PrintWriter(
+         wr = new PrintWriter(
             new OutputStreamWriter(new FileOutputStream(target), "ISO-8859-2"));
          wr.print(this.progText.getText());
+         wr.flush();
+         if (wr.checkError()) {
+            throw new IOException("Az írás a lemezre nem sikerült: " + target.getAbsolutePath());
+         }
          wr.close();
+         wr = null;
          this.progTextChanged = false;
          this.currentFile = target;
          this.editorTabs.setTitle("editor", target.getName());
@@ -1429,6 +1467,10 @@ public class Workbench extends JPanel {
             "Nem sikerült a mentés a következő fájlba: " + e.getMessage(),
             "Hiba a mentés során", JOptionPane.ERROR_MESSAGE);
          System.err.println(e.getMessage());
+      } finally {
+         if (wr != null) {
+            wr.close();
+         }
       }
    }
 
@@ -1445,7 +1487,7 @@ public class Workbench extends JPanel {
          if (progText != null) {
             AppPrefs.setIndentGuides(progText.isShowIndentGuides());
          }
-         AppPrefs.setAutoStop(autoStop);
+         AppPrefs.setAutoStop(backToEditor);
          int mainDiv = -1, centerDiv = -1, rightDiv = -1, inspectDiv = -1, consoleDiv = -1;
          if (mainSplit != null) mainDiv = mainSplit.getDividerLocation();
          if (centerSplit != null) centerDiv = centerSplit.getDividerLocation();
@@ -1724,23 +1766,139 @@ public class Workbench extends JPanel {
    }
 
    private int errorCount;
+   /** Az értelmezéskor talált hibák: [0]=szerkesztőbeli sor (0-alapú), [1]=üzenet. */
+   private final List<Object[]> errorList = new ArrayList<Object[]>();
+   /** A hibák közötti ugrálásnál a soron következő hiba mutatója. */
+   private int errorCursor = -1;
+
+   /**
+    * Az értelmezett programsorok indexeit a szerkesztő soraira képezi.
+    *
+    * A két számozás nem azonos: több forrássorra írt utasítás egyetlen
+    * programsorrá olvad össze (pl. {@code x := 5} / {@code + 3}), ezért az
+    * értelmezett lista indexével a szerkesztőben rossz sorra ugranánk.
+    * A megfeleltetés a sorok szövege alapján, előrefelé haladva történik;
+    * ahol nem található egyezés, ott {@code -1} áll.
+    */
+   private int[] mapParsedToSourceLines(ProgramList lst) {
+      String[] src = progText.getText().split("\n", -1);
+      int[] map = new int[lst.getSize()];
+      int at = 0;
+      for (int i = 0; i < map.length; i++) {
+         String want = normLine(ProgLineRenderer.stripHtml(lst.getElementAt(i).toString())[0]);
+         if (want.length() == 0) {
+            /* Üres programsor: a deklarációs és az utasításblokk közé az
+               értelmező beszúr egy üres helykitöltő sort, amelynek nincs
+               forráspárja – ezért itt nem léptetjük a mutatót. */
+            map[i] = at < src.length ? at : -1;
+            continue;
+         }
+         int found = -1;
+         for (int j = at; j < src.length; j++) {
+            String have = normLine(src[j]);
+            if (have.length() == 0) {
+               continue;
+            }
+            if (want.startsWith(have) || have.startsWith(want)) {
+               found = j;
+               break;
+            }
+         }
+         if (found < 0) {
+            /* Nincs egyező forrássor. Ilyenkor a jelenlegi pozíciót
+               feltételezzük, de nem lépünk tovább: különben az összes
+               rákövetkező sor elcsúszna. */
+            map[i] = at < src.length ? at : -1;
+         } else {
+            map[i] = found;
+            at = found + 1;
+         }
+      }
+      return map;
+   }
+
+   /**
+    * Kisbetűs, ékezettelen, minden szóközt elhagyó alak. A szóközök
+    * kihagyása azért kell, mert az értelmező nem mindenhol ugyanúgy
+    * tördeli a sort, mint a forrás (pl. {@code s: SZÖVEG} helyett
+    * {@code s : SZÖVEG} jelenik meg).
+    */
+   private static String normLine(String s) {
+      if (s == null) return "";
+      String t = hu.ppke.itk.plang.gui.editor.PlangSyntax.deacc(s.trim());
+      StringBuffer b = new StringBuffer(t.length());
+      for (int i = 0; i < t.length(); i++) {
+         char c = t.charAt(i);
+         if (!Character.isWhitespace(c)) {
+            b.append(c);
+         }
+      }
+      return b.toString();
+   }
+
+   /** Az értelmezett lista {@code idx}. sorához tartozó szerkesztőbeli sor. */
+   private int sourceLineForParsedIndex(int idx) {
+      if (parsedToSource == null || idx < 0 || idx >= parsedToSource.length) {
+         return idx;
+      }
+      return parsedToSource[idx] >= 0 ? parsedToSource[idx] : idx;
+   }
+
+   private int[] parsedToSource;
 
    private void markErrors(MainProgram prog) {
       errorCount = 0;
+      errorList.clear();
+      errorCursor = -1;
       int firstError = -1;
       ProgramList lst = (ProgramList) progList.getModel();
+      parsedToSource = mapParsedToSourceLines(lst);
       for (int i = 0; i < lst.getSize(); i++) {
          ProgramLine pl = lst.getElementAt(i);
          if (pl.hasError()) {
             errorCount++;
             if (firstError < 0) firstError = i;
+            errorList.add(new Object[] { Integer.valueOf(sourceLineForParsedIndex(i)),
+                                         pl.getError() == null ? "Szintaktikai hiba." : pl.getError() });
          }
       }
-      progText.setErrorLine(-1);
+      int[] lines = new int[errorList.size()];
+      for (int i = 0; i < lines.length; i++) {
+         lines[i] = ((Integer) errorList.get(i)[0]).intValue();
+      }
+      progText.setErrorLines(lines);
       if (firstError >= 0) {
          progList.setSelectedIndex(firstError);
          progList.ensureIndexIsVisible(firstError);
       }
+   }
+
+   /** A következő hibára ugrik a szerkesztőben, és kiírja az üzenetét. */
+   private void gotoNextError() {
+      if (errorList.isEmpty()) {
+         showTransientMessage("Nincs jelzett hiba.");
+         return;
+      }
+      errorCursor = (errorCursor + 1) % errorList.size();
+      Object[] e = errorList.get(errorCursor);
+      int line = ((Integer) e[0]).intValue();
+      editAction.actionPerformed(null);
+      progText.gotoLine(line);
+      progText.requestFocusInWindow();
+      showTransientMessage("Hiba " + (errorCursor + 1) + "/" + errorList.size()
+                           + " (sor " + (line + 1) + "): " + e[1]);
+   }
+
+   /** Szerkesztéskor a jelzett hibák elavulnak. */
+   private void clearErrorMarks() {
+      if (errorCount == 0 && errorList.isEmpty() && parsedToSource == null) {
+         return;
+      }
+      errorCount = 0;
+      errorList.clear();
+      errorCursor = -1;
+      parsedToSource = null;
+      progText.setErrorLines(null);
    }
 
    private void autoSizeStateColumns() {
@@ -1774,11 +1932,18 @@ public class Workbench extends JPanel {
       statusBar.setText("diag", errorCount == 0 ? "Nincs hiba" : (errorCount + " hiba"));
       statusBar.setIcon("diag", errorCount == 0 ? VSIcons.CHECK : VSIcons.ERROR,
                         errorCount == 0 ? null : Theme.p().statusFg);
+      int rows = stateTable.getRowCount();
       if (running) {
          statusBar.setText("run", "Fut – " + lastStepCount + " lépés");
          statusBar.setIcon("run", VSIcons.STOP, null);
-         statusBar.setText("steps", "Lépés " + (stateTable.getSelectedRow() + 1)
-                                    + " / " + stateTable.getRowCount());
+         statusBar.setText("steps", "Lépés " + (stateTable.getSelectedRow() + 1) + " / " + rows);
+      } else if (rows > 0) {
+         /* A szimuláció már lefutott, de az eredmény a képernyőn van –
+            ezt az állapotsor is így jelezze, ne állítsa azt, hogy futna. */
+         statusBar.setText("run", "Kész – " + rows + " lépés");
+         statusBar.setIcon("run", VSIcons.STOP, null);
+         int sel = stateTable.getSelectedRow();
+         statusBar.setText("steps", sel >= 0 ? "Lépés " + (sel + 1) + " / " + rows : "");
       } else {
          statusBar.setText("run", "Futtatás");
          statusBar.setIcon("run", VSIcons.PLAY, null);
@@ -2183,7 +2348,9 @@ public class Workbench extends JPanel {
          if (f.isDirectory()) return true;
          String n = f.getName();
          int dot = n.lastIndexOf('.');
-         if (dot < 0) return false;
+         /* A kiterjesztés nélküli fájlokat is mutatjuk: a mentés úgyis
+            kiegészíti .plang-gal, a régi mentések közt pedig előfordulnak. */
+         if (dot < 0) return true;
          return n.substring(dot + 1).toLowerCase().equals("plang");
       }
       public String getDescription() { return "Plang programok (*.plang)"; }

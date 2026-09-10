@@ -10,6 +10,7 @@ import hu.ppke.itk.plang.gui.*;
 import hu.ppke.itk.plang.gui.editor.CodeEditor;
 import hu.ppke.itk.plang.gui.theme.Theme;
 import hu.ppke.itk.plang.gui.widgets.EditorTabBar;
+import hu.ppke.itk.plang.gui.widgets.StatusBar;
 import hu.ppke.itk.plang.prog.MainProgram;
 
 /**
@@ -634,8 +635,364 @@ public class FuncTest {
             fail("Billentyűk: " + e);
         }
 
+        // --- 20. Keresés: szerkesztés után a találatok frissülnek ---
+        // (korábban az elavult offszetek miatt a „Csere” a szöveget rongálta)
+        try {
+            CodeEditor ed = new CodeEditor();
+            ed.setText("AAAA\nBBBB\nAAAA\n");
+            int n = ed.search("AAAA", true);
+            check(n == 2, "Keresés: 2 találat (got " + n + ")");
+            ed.getDocument().insertString(0, "0123456789", null);
+            ed.replaceCurrent("X");
+            String after = ed.getText();
+            check("0123456789X\nBBBB\nAAAA\n".equals(after),
+                  "Keresés: szerkesztés után a Csere a helyes szöveget cseréli (got '" + nl(after) + "')");
+
+            CodeEditor ed2 = new CodeEditor();
+            ed2.setText("a-a-a-a\n");
+            int m = ed2.replaceAll("a", "bb", true);
+            check(m == 4 && "bb-bb-bb-bb\n".equals(ed2.getText()),
+                  "replaceAll: 4 csere, a szöveg helyes (got '" + nl(ed2.getText()) + "')");
+        } catch (Exception e) {
+            fail("Keresés frissítése: " + e);
+        }
+
+        // --- 21. Hibajelölés a szerkesztőben ---
+        // (a setErrorLine korábban sosem kapott valódi értéket)
+        try {
+            Workbench wbE = new Workbench(null);
+            wbE.setSize(1440, 876);
+            doLayoutRec(wbE);
+            CodeEditor edE = (CodeEditor) getField(wbE, "progText");
+            Action parseE = (Action) getField(wbE, "parseAction");
+            edE.setText("PROGRAM p\nVÁLTOZÓK:\n  x: EGÉSZ\n  BE: x\n  EZ NEM PLANG\nPROGRAM_VÉGE\n");
+            parseE.actionPerformed(null);
+            check(wbE.getErrorCount() > 0, "Hibás program: hibaszám > 0 (got " + wbE.getErrorCount() + ")");
+            int el = edE.getErrorLine();
+            check(el == 4, "Hibás program: a szerkesztő 5. sora jelölve (got " + (el + 1) + ". sor)");
+            wbE.gotoError();
+            check(edE.caretLine() == 5, "Hibára ugrás: a kurzor a hibás sorban áll (got " + edE.caretLine() + ")");
+
+            // hibátlan program: nincs jelölés
+            edE.setText("PROGRAM p\nVÁLTOZÓK:\n  x: EGÉSZ\n  BE: x\n  KI: x\nPROGRAM_VÉGE\n");
+            parseE.actionPerformed(null);
+            check(wbE.getErrorCount() == 0 && edE.getErrorLine() == -1,
+                  "Hibátlan program: nincs hibajelölés");
+        } catch (Exception e) {
+            fail("Hibajelölés: " + e);
+        }
+
+        // --- 22. Értelmezett sor -> forrássor megfeleltetés ---
+        // (több sorra írt utasításnál korábban rossz sorra ugrott a duplaklikk)
+        try {
+            Workbench wbM = new Workbench(null);
+            wbM.setSize(1440, 876);
+            doLayoutRec(wbM);
+            CodeEditor edM = (CodeEditor) getField(wbM, "progText");
+            ((Action) getField(wbM, "parseAction")).actionPerformed(null);
+            edM.setText("PROGRAM p\nVÁLTOZÓK:\n  x: EGÉSZ\n\n  x := 5\n     + 3\n  KI: x\nPROGRAM_VÉGE\n");
+            ((Action) getField(wbM, "parseAction")).actionPerformed(null);
+            // a ProgramList csomagon belüli típus, ezért reflexióval adjuk át
+            Object model = ((JList) getField(wbM, "progList")).getModel();
+            int[] m2 = (int[]) invoke(wbM, "mapParsedToSourceLines",
+                  new Class[]{Class.forName("hu.ppke.itk.plang.gui.ProgramList")},
+                  new Object[]{model});
+            // 0:PROGRAM 1:VÁLTOZÓK 2:x:EGÉSZ 3:(üres) 4:x:=5 5:(+3 kimarad) 6:KI 7:PROGRAM_VÉGE
+            check(m2.length == 7 && m2[0] == 0 && m2[4] == 4 && m2[5] == 6 && m2[6] == 7,
+                  "Sorleképezés: az összevont utasítás után is helyes (got "
+                     + m2[0] + "," + m2[1] + "," + m2[2] + "," + m2[3] + "," + m2[4] + ","
+                     + m2[5] + "," + m2[6] + ")");
+        } catch (Exception e) {
+            fail("Sorleképezés: " + e);
+        }
+
+        // --- 23. CallStack enter/leave: helyes ListDataEvent indexek ---
+        try {
+            String src = "PROGRAM p\nVÁLTOZÓK:\n  x: EGÉSZ\n\n  x := 5\nPROGRAM_VÉGE\n";
+            MainProgram progC = MainProgram.parseMainProgram(
+                  new hu.ppke.itk.plang.prog.Lexer(new java.io.StringReader(src)));
+            java.util.List<hu.ppke.itk.plang.prog.State> states =
+                  progC.runProgram(new java.util.HashMap<String,String>(), 1000);
+
+            Class<?> slCls = Class.forName("hu.ppke.itk.plang.gui.StateList");
+            java.lang.reflect.Constructor<?> slC = slCls.getDeclaredConstructor();
+            slC.setAccessible(true);
+            Object sl = slC.newInstance();
+            Class<?> csCls = Class.forName("hu.ppke.itk.plang.gui.CallStack");
+            java.lang.reflect.Constructor<?> csC =
+                  csCls.getDeclaredConstructor(slCls, int.class);
+            csC.setAccessible(true);
+            final Object cs = csC.newInstance(sl, Integer.valueOf(1000));
+
+            java.lang.reflect.Method runP =
+                  csCls.getDeclaredMethod("runProgram", MainProgram.class, Map.class, Map.class);
+            runP.setAccessible(true);
+            runP.invoke(cs, progC, new java.util.HashMap<String,String>(),
+                        new java.util.TreeMap<String,hu.ppke.itk.plang.prog.StreamData>());
+            check(((javax.swing.AbstractListModel) cs).getSize() == 1,
+                  "CallStack: a futás után 1 veremelem");
+
+            final int[] seen = new int[]{-1, -1, -1, -1}; // add0, add1, rem0, rem1
+            ((javax.swing.AbstractListModel) cs).addListDataListener(
+                  new javax.swing.event.ListDataListener() {
+                public void intervalAdded(javax.swing.event.ListDataEvent e) {
+                    seen[0] = e.getIndex0(); seen[1] = e.getIndex1();
+                }
+                public void intervalRemoved(javax.swing.event.ListDataEvent e) {
+                    seen[2] = e.getIndex0(); seen[3] = e.getIndex1();
+                }
+                public void contentsChanged(javax.swing.event.ListDataEvent e) {}
+            });
+
+            java.lang.reflect.Method enter =
+                  csCls.getDeclaredMethod("enter", String.class, java.util.List.class);
+            enter.setAccessible(true);
+            enter.invoke(cs, "ALPROGRAM", states);
+            check(seen[0] == 1 && seen[1] == 1,
+                  "CallStack.enter: intervalAdded [1,1] (got [" + seen[0] + "," + seen[1] + "])");
+
+            java.lang.reflect.Method leave = csCls.getDeclaredMethod("leave");
+            leave.setAccessible(true);
+            leave.invoke(cs);
+            check(seen[2] == 1 && seen[3] == 1,
+                  "CallStack.leave: intervalRemoved [1,1] (got [" + seen[2] + "," + seen[3] + "])");
+            check(((javax.swing.AbstractListModel) cs).getSize() == 1,
+                  "CallStack.leave: 1 veremelem marad");
+        } catch (Exception e) {
+            fail("CallStack események: " + e);
+        }
+
+        // --- 24. StateList üres állapotlistára nem száll el ---
+        try {
+            Class<?> slCls = Class.forName("hu.ppke.itk.plang.gui.StateList");
+            java.lang.reflect.Constructor<?> slC = slCls.getDeclaredConstructor();
+            slC.setAccessible(true);
+            Object sl = slC.newInstance();
+            java.lang.reflect.Method setStates =
+                  slCls.getDeclaredMethod("setStates", java.util.List.class);
+            setStates.setAccessible(true);
+            setStates.invoke(sl, new java.util.ArrayList<Object>());
+            check(((javax.swing.table.AbstractTableModel) sl).getRowCount() == 0,
+                  "StateList: üres állapotlista nem dob kivételt");
+        } catch (Exception e) {
+            fail("StateList üres lista: " + e);
+        }
+
+        // --- 25. Futás után nem marad „fut” állapotban ---
+        try {
+            Workbench wbR = new Workbench(null);
+            wbR.setSize(1440, 876);
+            doLayoutRec(wbR);
+            CodeEditor edR = (CodeEditor) getField(wbR, "progText");
+            edR.setText("PROGRAM p\nVÁLTOZÓK:\n  x: EGÉSZ\n\n  x := 5\n  KI: x\nPROGRAM_VÉGE\n");
+            ((Action) getField(wbR, "parseAction")).actionPerformed(null);
+            ((Action) getField(wbR, "runAction")).actionPerformed(null);
+            boolean isRunning = ((Boolean) getField(wbR, "running")).booleanValue();
+            StatusBar sbR = (StatusBar) getField(wbR, "statusBar");
+            String runTxt = sbR.cell("run").text;
+            check(!isRunning, "Futás után a running jelző hamis");
+            check(runTxt != null && runTxt.indexOf("Kész") == 0,
+                  "Futás után az állapotsor „Kész…” (got '" + runTxt + "')");
+            check(((Action) getField(wbR, "stopAction")).isEnabled(),
+                  "Futás után a Futtatás vége gomb elérhető");
+        } catch (Exception e) {
+            fail("Futás utáni állapot: " + e);
+        }
+
+        // --- 26. „Másol” után a mentetlen állapot jelzése konzisztens ---
+        try {
+            Workbench wbC = new Workbench(null);
+            wbC.setSize(1440, 876);
+            doLayoutRec(wbC);
+            CodeEditor edC = (CodeEditor) getField(wbC, "progText");
+            edC.setText("PROGRAM p\nVÁLTOZÓK:\n  x: EGÉSZ\n\n  x := 5\n  KI: x\nPROGRAM_VÉGE\n");
+            ((Action) getField(wbC, "parseAction")).actionPerformed(null);
+            ((Action) getField(wbC, "copyAction")).actionPerformed(null);
+            check(wbC.hasUnsavedChanges(),
+                  "Másol után a hasUnsavedChanges() igaz (a fül is piszkos)");
+        } catch (Exception e) {
+            fail("Másol piszkosság: " + e);
+        }
+
+        // --- 27. Kódkiegészítés ---
+        try {
+            java.util.List<String> all = CodeEditor.completionsFor("");
+            check(all.size() == hu.ppke.itk.plang.gui.editor.PlangSyntax.COMPLETIONS.length,
+                  "Kiegészítés: üres előtagra minden kulcsszó (got " + all.size() + ")");
+            java.util.List<String> v = CodeEditor.completionsFor("valtoz");
+            check(v.size() == 1 && "VÁLTOZÓK:".equals(v.get(0)),
+                  "Kiegészítés: ékezet nélkül is megtalálja a VÁLTOZÓK:-at (got " + v + ")");
+            java.util.List<String> none = CodeEditor.completionsFor("zzz");
+            check(none.isEmpty(), "Kiegészítés: ismeretlen előtagra üres lista");
+        } catch (Exception e) {
+            fail("Kódkiegészítés: " + e);
+        }
+
+        // --- 30b. Kódkiegészítés: saját azonosítók is szerepelnek ---
+        try {
+            CodeEditor edI = new CodeEditor();
+            edI.setText("PROGRAM proba\nVÁLTOZÓK:\n  alma: EGÉSZ\n  korte: SZÖVEG\n\n"
+                  + "  alma := 5\n  KI: alma\nPROGRAM_VÉGE\n");
+            java.util.List<String> names = edI.collectDeclaredNames();
+            check(names.contains("alma") && names.contains("korte") && names.contains("proba"),
+                  "Deklarált nevek gyűjtése: alma, korte, proba (got " + names + ")");
+            check(!names.contains("EGÉSZ") && !names.contains("KI"),
+                  "Deklarált nevek: kulcsszavak nem kerülnek bele");
+
+            // az azonosító megelőzi a kulcsszót, és a prefix szűkít
+            java.util.List<String> al = edI.allCompletions("al");
+            check(al.size() >= 1 && "alma".equals(al.get(0)),
+                  "allCompletions('al'): az alma az első (got " + al + ")");
+            java.util.List<String> k = edI.allCompletions("korte");
+            check(k.size() == 1 && "korte".equals(k.get(0)),
+                  "allCompletions('korte'): egyetlen saját azonosító (got " + k + ")");
+            // üres prefix: azonosítók + kulcsszavak együtt
+            java.util.List<String> allI = edI.allCompletions("");
+            check(allI.size() > hu.ppke.itk.plang.gui.editor.PlangSyntax.COMPLETIONS.length,
+                  "allCompletions(''): azonosítókkal több, mint a kulcsszavak (got " + allI.size() + ")");
+        } catch (Exception e) {
+            fail("Azonosító-kiegészítés: " + e);
+        }
+
+        // --- 28. Több hibás sor jelölése egyszerre ---
+        try {
+            CodeEditor edL = new CodeEditor();
+            edL.setErrorLines(new int[]{3, 1, 1, 8});
+            int[] got = edL.getErrorLines();
+            check(got.length == 3 && got[0] == 1 && got[1] == 3 && got[2] == 8,
+                  "setErrorLines: rendezve és ismétlés nélkül (got "
+                     + got[0] + "," + got[1] + "," + got[2] + ")");
+            check(edL.isErrorLine(3) && !edL.isErrorLine(2), "isErrorLine helyes");
+            edL.setErrorLine(-1);
+            check(edL.getErrorLines().length == 0, "setErrorLine(-1) törli a jelölést");
+        } catch (Exception e) {
+            fail("setErrorLines: " + e);
+        }
+
+        // --- 29. Sorleképezés vezérlési szerkezetekkel és a mintaprogrammal ---
+        try {
+            Workbench wbL = new Workbench(null);
+            wbL.setSize(1440, 876);
+            doLayoutRec(wbL);
+            CodeEditor edL2 = (CodeEditor) getField(wbL, "progText");
+            Action parseL = (Action) getField(wbL, "parseAction");
+            Class<?> plCls = Class.forName("hu.ppke.itk.plang.gui.ProgramList");
+
+            File ex = new File("examples/osszeadas.plang");
+            if (ex.exists()) {
+                invoke(wbL, "loadFile", new Class[]{File.class}, new Object[]{ex});
+                parseL.actionPerformed(null);
+                int[] m3 = (int[]) invoke(wbL, "mapParsedToSourceLines",
+                        new Class[]{plCls},
+                        new Object[]{((JList) getField(wbL, "progList")).getModel()});
+                boolean identity = m3.length == 15;
+                for (int i = 0; identity && i < m3.length; i++) {
+                    if (m3[i] != i) identity = false;
+                }
+                check(identity, "Sorleképezés: a mintaprogram 15 sora 1:1 felel meg");
+            } else {
+                ok("Sorleképezés: a mintaprogram hiányzik, kihagyva");
+            }
+
+            edL2.setText("PROGRAM q\nVÁLTOZÓK:\n  i: EGÉSZ\n\n  i := 1\n"
+                  + "  HA i > 0 AKKOR\n    KI: \"pozitív\"\n  KÜLÖNBEN\n    KI: \"nem\"\n"
+                  + "  HA_VÉGE\n  CIKLUS\n    i := i + 1\n  AMÍG i < 10\n  CIKLUS_VÉGE\n"
+                  + "  KI: i\nPROGRAM_VÉGE\n");
+            parseL.actionPerformed(null);
+            int[] m4 = (int[]) invoke(wbL, "mapParsedToSourceLines",
+                    new Class[]{plCls},
+                    new Object[]{((JList) getField(wbL, "progList")).getModel()});
+            int[] want = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+            boolean same = m4.length == want.length;
+            for (int i = 0; same && i < want.length; i++) {
+                if (m4[i] != want[i]) same = false;
+            }
+            check(same, "Sorleképezés: HA/KÜLÖNBEN/CIKLUS esetén is soronkénti (got "
+                  + java.util.Arrays.toString(m4) + ")");
+        } catch (Exception e) {
+            fail("Sorleképezés (vezérlés): " + e);
+        }
+
+        // --- 30. Attribútum-változás nem jelenti azt, hogy a szöveg módosult ---
+        try {
+            Workbench wbD = new Workbench(null);
+            wbD.setSize(1440, 876);
+            doLayoutRec(wbD);
+            check(!wbD.hasUnsavedChanges(),
+                  "Induláskor nincs mentetlen változás (got " + wbD.hasUnsavedChanges() + ")");
+            ((Action) getField(wbD, "increaseFontAction")).actionPerformed(null);
+            check(!wbD.hasUnsavedChanges(), "Betűméret-növelés nem tesz piszkossá");
+            ((Action) getField(wbD, "toggleThemeAction")).actionPerformed(null);
+            check(!wbD.hasUnsavedChanges(), "Témaváltás nem tesz piszkossá");
+
+            File tmpD = File.createTempFile("plang-dirty", ".plang");
+            tmpD.deleteOnExit();
+            PrintWriter pwD = new PrintWriter(new OutputStreamWriter(new FileOutputStream(tmpD), "ISO-8859-2"));
+            pwD.print("PROGRAM p\nPROGRAM_VÉGE\n");
+            pwD.close();
+            invoke(wbD, "loadFile", new Class[]{File.class}, new Object[]{tmpD});
+            check(!wbD.hasUnsavedChanges(), "Betöltés után nincs mentetlen változás");
+            ((Action) getField(wbD, "increaseFontAction")).actionPerformed(null);
+            check(!wbD.hasUnsavedChanges(), "Betöltött fájl + betűméret-váltás: tiszta marad");
+            // valódi gépelés viszont piszkossá tesz
+            ((CodeEditor) getField(wbD, "progText")).getDocument().insertString(0, "x", null);
+            check(wbD.hasUnsavedChanges(), "Valódi gépelés piszkossá tesz");
+        } catch (Exception e) {
+            fail("Piszkosság-jelzés: " + e);
+        }
+
+        // --- 31. Kontextusfüggő kiegészítés és gépelés közbeni logika ---
+        try {
+            CodeEditor edC2 = new CodeEditor();
+
+            // deklarációs kontextus: "x: " után típusokat kínál, kulcsszót nem
+            edC2.setText("PROGRAM p\nVÁLTOZÓK:\n  x: ");
+            edC2.setCaretPosition(edC2.getDocument().getLength());
+            check(edC2.completionContext() == CodeEditor.CTX_TYPE,
+                  "Kontextus: 'x: ' után típus-kontextus (got " + edC2.completionContext() + ")");
+            java.util.List<String> types = edC2.contextualCompletions("");
+            check(types.contains("EGÉSZ") && types.contains("SZÖVEG")
+                  && !types.contains("HA") && !types.contains("alma"),
+                  "Típus-kontextus: csak típusnevek (got " + types.size() + " elem)");
+
+            // kifejezés-kontextus: saját változó + függvény is van
+            edC2.setText("PROGRAM p\nVÁLTOZÓK:\n  alma: EGÉSZ\n\n  alma := ");
+            edC2.setCaretPosition(edC2.getDocument().getLength());
+            check(edC2.completionContext() == CodeEditor.CTX_EXPR,
+                  "Kontextus: 'alma := ' után kifejezés-kontextus");
+            java.util.List<String> expr = edC2.contextualCompletions("");
+            check(expr.contains("alma") && expr.contains("KEREK"),
+                  "Kifejezés-kontextus: változó és függvény is javasolt");
+
+            // prefix-szűkítés függvényre
+            java.util.List<String> kerek = edC2.contextualCompletions("kere");
+            check(kerek.contains("KEREK"), "contextualCompletions('kere') tartalmazza a KEREK-et");
+
+            // ':=' nem vált típus-kontextust (a := értékadás, nem deklaráció)
+            edC2.setText("PROGRAM p\nVÁLTOZÓK:\n  x: EGÉSZ\n\n  x :=");
+            edC2.setCaretPosition(edC2.getDocument().getLength());
+            check(edC2.completionContext() == CodeEditor.CTX_EXPR,
+                  "Kontextus: ':=' után nem típus-kontextus");
+
+            // auto-popup kapcsoló: kikapcsolva nem dob, és a lista zárva marad
+            edC2.setAutoComplete(false);
+            check(!edC2.isAutoComplete(), "setAutoComplete(false) hat");
+            edC2.getDocument().insertString(edC2.getDocument().getLength(), "x", null);
+            check(!edC2.isCompletionActive(), "Kikapcsolt auto-popup: nincs lista");
+            edC2.hideCompletions();
+            edC2.acceptCompletion(); // no-op, nem dob
+            check(true, "hideCompletions/acceptCompletion fej nélkül nem dob");
+        } catch (Exception e) {
+            fail("Kontextusos kiegészítés: " + e);
+        }
+
         System.out.println("\n=== Eredmény: " + passed + " OK, " + failed + " FAIL ===");
         if (failed > 0) System.exit(1);
+    }
+
+    /** Sorvégeket láthatóvá tevő segéd a hibaüzenetekhez. */
+    static String nl(String s) {
+        return s == null ? "null" : s.replace("\n", "\\n");
     }
 
     static void doLayoutRec(Component c) {

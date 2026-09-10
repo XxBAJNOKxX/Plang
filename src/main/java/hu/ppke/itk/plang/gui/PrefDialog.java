@@ -152,12 +152,13 @@ public class PrefDialog extends JDialog {
       row++;
 
       // --- automatikus leállítás ---
-      this.autoStop = new JCheckBox("A program végén automatikusan álljon le", false);
+      this.autoStop = new JCheckBox("Futás után lépjen vissza a szerkesztőbe", false);
       this.autoStop.setFont(Theme.uiPlain());
       this.autoStop.setOpaque(false);
       this.autoStop.setForeground(Theme.p().sideBarFg);
-      this.autoStop.setToolTipText("A futtatás befejeztével (és futási hiba esetén) "
-            + "a környezet magától kilép a futtatási módból.");
+      this.autoStop.setToolTipText("A futtatás befejeztével a környezet visszaáll szerkesztő "
+            + "módba. Kikapcsolva az értelmezett program és az állapottábla marad elöl, "
+            + "hogy az eredményt vissza lehessen nézni.");
       gc.gridx = 1;
       gc.gridy = row;
       gc.weightx = 1;
