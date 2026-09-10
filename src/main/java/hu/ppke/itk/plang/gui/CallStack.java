@@ -22,14 +22,17 @@ final class CallStack extends AbstractListModel {
    State runProgram(MainProgram prog, Map<String, String> input, Map<String, StreamData> output) {
       int s = this.stack.size();
       this.stack.clear();
-      this.fireIntervalRemoved(this, 0, s);
+      if (s > 0) {
+         /* A zárt intervallum utolsó indexe a régi méretnél eggyel kisebb. */
+         this.fireIntervalRemoved(this, 0, s - 1);
+      }
       if (prog == null) {
          this.stateList.setStates((List)null);
          return null;
       } else {
          List<State> states = prog.runProgram(input, this.maxSteps);
          this.stack.add(new StackEntry("FŐPROGRAM", states));
-         this.fireIntervalAdded(this, 0, 1);
+         this.fireIntervalAdded(this, 0, 0);
          this.stateList.setStates(states);
          State last = (State)states.get(states.size() - 1);
 
@@ -44,14 +47,19 @@ final class CallStack extends AbstractListModel {
    void enter(String expr, List<State> subProg) {
       this.stack.add(new StackEntry(expr, subProg));
       this.stateList.setStates(subProg);
-      this.fireIntervalAdded(this, this.stack.size() - 1, this.stack.size());
+      /* Az új elem a verem tetején, azaz a (méret-1) indexen van: a
+         ListDataEvent indexei zárt intervallumot adnak meg, ezért mindkét
+         végpont ugyanaz az egyetlen index. */
+      int top = this.stack.size() - 1;
+      this.fireIntervalAdded(this, top, top);
    }
 
    void leave() {
       if (this.stack.size() > 1) {
+         int removed = this.stack.size() - 1;
          this.stack.removeLast();
          this.stateList.setStates(((StackEntry)this.stack.getLast()).states);
-         this.fireIntervalRemoved(this, this.stack.size(), this.stack.size() + 1);
+         this.fireIntervalRemoved(this, removed, removed);
       }
 
    }
