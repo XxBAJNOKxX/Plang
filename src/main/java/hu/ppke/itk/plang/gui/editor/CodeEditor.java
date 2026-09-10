@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import javax.swing.AbstractAction;
+import javax.swing.Action;
 import javax.swing.BorderFactory;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
@@ -28,6 +29,7 @@ import javax.swing.event.CaretListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultEditorKit;
 import javax.swing.text.Element;
 import javax.swing.text.Utilities;
 
@@ -63,8 +65,8 @@ public class CodeEditor extends JTextPane {
    private javax.swing.JPopupMenu completionPopup;
    private javax.swing.JList completionList;
    private String completionPrefix = "";
-   /* Az utolsó kurzorpozíció: ha a kurzor elmozdul (nyilak, egérkattintás),
-      a kiegészítő lista bezáródik. */
+   /* Az utolsó kurzorpozíció: bal/jobb nyíl vagy egérkattintás bezárja a
+      kiegészítő listát; a fel/le a listában lépked, a kurzort nem mozgatja. */
    private int lastCaretDot = 0;
    /* Explicit módban (Ctrl+Space) a lista veszi át a fókuszt – ilyenkor a
       fókuszvesztés miatt nem szabad bezárni a listát. */
@@ -82,9 +84,9 @@ public class CodeEditor extends JTextPane {
       installContextMenu();
       addCaretListener(new CaretListener() {
          public void caretUpdate(CaretEvent e) {
-            /* A kurzor elmozdulása (nyíl-billentyű, egérkattintás) bezárja a
-               kiegészítő listát, hogy az ne maradjon a képernyőn a már
-               begépelt szó után. */
+            /* Bal/jobb nyíl vagy egérkattintás bezárja a listát. A fel/le
+               nyilakat a kiegészítés navigációja fogja el, ezért azok nem
+               mozgatják a kurzort, és ide sem jutnak el. */
             if (e.getDot() != lastCaretDot) {
                lastCaretDot = e.getDot();
                hideCompletions();
@@ -533,11 +535,15 @@ public class CodeEditor extends JTextPane {
    /* ------------------------ billentyűk ---------------------------- */
 
    private void installKeyBindings() {
-      // Enter: automatikus behúzás a PLanG szerkezetei szerint
+      // Enter: nyitott kiegészítőnél a kijelölt javaslat, egyébként behúzás
       getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "plang-newline");
       getActionMap().put("plang-newline", new AbstractAction() {
          private static final long serialVersionUID = 1L;
          public void actionPerformed(ActionEvent e) {
+            if (isCompletionActive()) {
+               acceptCompletion();
+               return;
+            }
             smartNewline();
          }
       });
@@ -624,6 +630,41 @@ public class CodeEditor extends JTextPane {
          private static final long serialVersionUID = 1L;
          public void actionPerformed(ActionEvent e) {
             showCompletions(true);
+         }
+      });
+
+      /* Fel/le (és PageUp/PageDown): nyitott listában a javaslatok között
+         lépkednek, a kurzor a helyén marad. Zárt listában a szerkesztő
+         eredeti kurzormozgása marad. */
+      bindCompletionNav(KeyEvent.VK_UP, "plang-complete-up", DefaultEditorKit.upAction, -1, false);
+      bindCompletionNav(KeyEvent.VK_DOWN, "plang-complete-down", DefaultEditorKit.downAction, 1, false);
+      bindCompletionNav(KeyEvent.VK_PAGE_UP, "plang-complete-pgup", DefaultEditorKit.pageUpAction, -1, true);
+      bindCompletionNav(KeyEvent.VK_PAGE_DOWN, "plang-complete-pgdn", DefaultEditorKit.pageDownAction, 1, true);
+   }
+
+   /**
+    * Egy nyíl-billentyűt a kiegészítő lista navigációjához köt, zárt listánál
+    * pedig az eredeti szerkesztő-akciót hívja.
+    */
+   private void bindCompletionNav(int key, final String name, String fallback,
+                                  final int dir, final boolean page) {
+      final Action orig = getActionMap().get(fallback);
+      getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(key, 0), name);
+      getActionMap().put(name, new AbstractAction() {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            if (isCompletionActive()) {
+               int delta = dir;
+               if (page) {
+                  int vis = completionList != null ? completionList.getVisibleRowCount() : 8;
+                  delta = dir * Math.max(1, vis);
+               }
+               moveCompletion(delta);
+               return;
+            }
+            if (orig != null) {
+               orig.actionPerformed(e);
+            }
          }
       });
    }
@@ -1012,7 +1053,41 @@ public class CodeEditor extends JTextPane {
       return completionPopup != null && completionPopup.isVisible();
    }
 
-   /** A kijelölt (vagy első) javaslat elfogadása – a Tab hívja. */
+   /**
+    * A kijelölést {@code delta} elemmel lépteti a kiegészítő listában.
+    * A lista szélein megáll (nem csavarodik körbe). Nyitott lista nélkül
+    * {@code false}-t ad, így a hívó tudja, hogy a nyilat a szerkesztőnek
+    * kell továbbadnia.
+    */
+   public boolean moveCompletion(int delta) {
+      if (completionList == null) {
+         return false;
+      }
+      int n = completionList.getModel().getSize();
+      if (n <= 0) {
+         return false;
+      }
+      int i = completionList.getSelectedIndex();
+      if (i < 0) {
+         i = 0;
+      }
+      int next = i + delta;
+      if (next < 0) {
+         next = 0;
+      } else if (next >= n) {
+         next = n - 1;
+      }
+      completionList.setSelectedIndex(next);
+      completionList.ensureIndexIsVisible(next);
+      return true;
+   }
+
+   /** A kijelölt javaslat indexe, vagy {@code -1} ha nincs lista. */
+   public int selectedCompletionIndex() {
+      return completionList == null ? -1 : completionList.getSelectedIndex();
+   }
+
+   /** A kijelölt (vagy első) javaslat elfogadása – a Tab/Enter hívja. */
    public void acceptCompletion() {
       if (completionList != null && isCompletionActive()) {
          Object sel = completionList.getSelectedValue();

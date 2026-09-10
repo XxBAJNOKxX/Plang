@@ -78,7 +78,8 @@ További funkciók:
   kontextusfüggő javaslatok – deklarációban (`x: ` után) **típusnevek**, kifejezésben a
   program saját azonosítói (változó, eljárás, függvény) és a beépített függvények,
   ékezet-független prefix-illesztéssel. Egyetlen találatnál azonnal kiegészít, többnél
-  lista jelenik meg; a **Tab** elfogadja, az **Esc** bezárja. Az automatikus felbukkanás
+  lista jelenik meg; a **↑ / ↓** (és PageUp / PageDown) a javaslatok között lépked,
+  a **Tab** vagy **Enter** elfogadja, az **Esc** bezárja. Az automatikus felbukkanás
   a szerkesztőben hagyja a fókuszt, így a gépelés nem akad meg.
 - **Hibajelölés és hibánkénti ugrás**: az értelmezés a szerkesztőben is megjelöli a hibás
   sorokat (piros pötty a sorszámsávban, vörös sorkiemelés); az állapotsor hiba-cellájára
