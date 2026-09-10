@@ -987,6 +987,27 @@ public class FuncTest {
             fail("Kontextusos kiegészítés: " + e);
         }
 
+        // --- 31b. Kurzormozgás bezárja a kiegészítő listát ---
+        // (korábban a lista a szó begépelése / a következő sorra lépés után
+        //  is a képernyőn maradt, mert semmi nem zárta be)
+        try {
+            CodeEditor edM2 = new CodeEditor();
+            edM2.setText("PROGRAM p\nVÁLTOZÓK:\n  x: EGÉSZ\n\n  x := 5\n  KI: x\nPROGRAM_VÉGE\n");
+            edM2.setCaretPosition(edM2.getDocument().getLength());
+            // Hamis előugró lista: fej nélküli környezetben a valódi popup nem
+            // jelenik meg, ezért a hivatkozást közvetlenül adjuk be.
+            setField(edM2, "completionPopup", new javax.swing.JPopupMenu());
+            setField(edM2, "completionList", new javax.swing.JList(new Object[]{"X"}));
+            check(getField(edM2, "completionPopup") != null,
+                  "Kurzormozgás teszt: a lista előkészítve");
+            // A kurzor elmozdulásakor a listenernek be kell zárnia a listát.
+            edM2.setCaretPosition(0);
+            check(getField(edM2, "completionPopup") == null,
+                  "Kurzormozgás bezárja a kiegészítő listát");
+        } catch (Exception e) {
+            fail("Kurzormozgás bezárja a listát: " + e);
+        }
+
         // --- 32. Debugger: léptetés + töréspont ---
         try {
             Workbench wbG = new Workbench(null);
