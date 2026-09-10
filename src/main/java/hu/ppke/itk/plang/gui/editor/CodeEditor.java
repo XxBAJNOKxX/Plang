@@ -63,6 +63,12 @@ public class CodeEditor extends JTextPane {
    private javax.swing.JPopupMenu completionPopup;
    private javax.swing.JList completionList;
    private String completionPrefix = "";
+   /* Az utolsó kurzorpozíció: ha a kurzor elmozdul (nyilak, egérkattintás),
+      a kiegészítő lista bezáródik. */
+   private int lastCaretDot = 0;
+   /* Explicit módban (Ctrl+Space) a lista veszi át a fókuszt – ilyenkor a
+      fókuszvesztés miatt nem szabad bezárni a listát. */
+   private boolean completionFocusable = false;
 
    public CodeEditor() {
       super(new SyntaxDocument());
@@ -76,7 +82,25 @@ public class CodeEditor extends JTextPane {
       installContextMenu();
       addCaretListener(new CaretListener() {
          public void caretUpdate(CaretEvent e) {
+            /* A kurzor elmozdulása (nyíl-billentyű, egérkattintás) bezárja a
+               kiegészítő listát, hogy az ne maradjon a képernyőn a már
+               begépelt szó után. */
+            if (e.getDot() != lastCaretDot) {
+               lastCaretDot = e.getDot();
+               hideCompletions();
+            }
             repaint();
+         }
+      });
+      addFocusListener(new java.awt.event.FocusAdapter() {
+         public void focusLost(java.awt.event.FocusEvent e) {
+            /* A fókusz nélküli (automatikus) lista nem záródik magától,
+               amikor a szerkesztő elveszti a fókuszt, ezért itt zárjuk be.
+               Az explicit (Ctrl+Space) lista éppen a listának adja a fókuszt,
+               azt maga a Swing zárja be, amikor másra kattintunk. */
+            if (!completionFocusable) {
+               hideCompletions();
+            }
          }
       });
       getDocument().addDocumentListener(new DocumentListener() {
@@ -903,6 +927,11 @@ public class CodeEditor extends JTextPane {
          return;
       }
       try {
+         /* A korábbi listát bezárjuk, mielőtt az újat megjelenítjük: különben
+            a gépelés során az előugró ablakok egymásra halmozódnának, és a
+            régebbiek a szó begépelése után is a képernyőn maradnának. */
+         hideCompletions();
+
          final javax.swing.JList list = new javax.swing.JList(items.toArray());
          list.setSelectedIndex(0);
          final javax.swing.JScrollPane sp = new javax.swing.JScrollPane(list);
@@ -943,15 +972,23 @@ public class CodeEditor extends JTextPane {
             this.completionPopup = popup;
             this.completionList = list;
             this.completionPrefix = prefix;
+            this.completionFocusable = explicit;
             popup.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
                public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) {}
                public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {
-                  completionPopup = null;
-                  completionList = null;
+                  /* Csak akkor töröljük a hivatkozást, ha az éppen bezáródó
+                     lista a jelenlegi – egy korábbi lista bezáródása ne
+                     takarítsa el az újabbat. */
+                  if (completionPopup == popup) {
+                     completionPopup = null;
+                     completionList = null;
+                  }
                }
                public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) {
-                  completionPopup = null;
-                  completionList = null;
+                  if (completionPopup == popup) {
+                     completionPopup = null;
+                     completionList = null;
+                  }
                }
             });
             if (explicit) {
@@ -994,6 +1031,7 @@ public class CodeEditor extends JTextPane {
       }
       completionPopup = null;
       completionList = null;
+      completionFocusable = false;
    }
 
    /**
