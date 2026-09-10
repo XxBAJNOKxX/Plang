@@ -45,6 +45,36 @@ public class LineNumberGutter extends JPanel {
       editor.addCaretListener(new CaretListener() {
          public void caretUpdate(CaretEvent e) { repaint(); }
       });
+
+      /* Kattintás a sávon: az adott sor töréspontját kapcsolja. */
+      addMouseListener(new java.awt.event.MouseAdapter() {
+         public void mousePressed(java.awt.event.MouseEvent e) {
+            int line = lineAtY(e.getY());
+            if (line >= 0) {
+               editor.toggleBreakpoint(line);
+            }
+         }
+      });
+   }
+
+   /** A megadott y koordinátához tartozó sor (0-alapú), vagy -1. */
+   private int lineAtY(int y) {
+      javax.swing.text.Element root = editor.getDocument().getDefaultRootElement();
+      for (int i = 0; i < root.getElementCount(); i++) {
+         try {
+            java.awt.Rectangle r = editor.modelToView(root.getElement(i).getStartOffset());
+            if (r == null) {
+               continue;
+            }
+            int lh = r.height > 0 ? r.height : getFontMetrics(editor.getFont()).getHeight();
+            if (y >= r.y && y < r.y + lh) {
+               return i;
+            }
+         } catch (javax.swing.text.BadLocationException e) {
+            // kihagyjuk
+         }
+      }
+      return -1;
    }
 
    public void applyTheme() {
@@ -103,6 +133,7 @@ public class LineNumberGutter extends JPanel {
 
             boolean isCurrent = (i == caretLine);
             boolean isError = editor.isErrorLine(i);
+            boolean isBp = editor.isBreakpoint(i);
 
             String num = String.valueOf(i + 1);
             g2.setColor(isError ? p.error : (isCurrent ? p.gutterActiveFg : p.gutterFg));
@@ -110,10 +141,14 @@ public class LineNumberGutter extends JPanel {
             int x = getWidth() - tw - 14;
             g2.drawString(num, x, y + fm.getAscent());
 
-            if (isError) {
+            if (isBp) {
+               g2.setColor(p.error);
+               g2.fillOval(getWidth() - 10, y + lh / 2 - 4, 8, 8);
+            } else if (isError) {
                g2.setColor(p.error);
                g2.fillOval(4, y + lh / 2 - 3, 6, 6);
             }
+
          } catch (BadLocationException e) {
             // kihagyjuk az adott sort
          }

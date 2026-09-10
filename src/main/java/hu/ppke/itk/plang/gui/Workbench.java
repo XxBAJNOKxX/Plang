@@ -121,6 +121,9 @@ public class Workbench extends JPanel {
    private Action increaseFontAction;
    private Action decreaseFontAction;
    private Action replaceAction;
+   private Action stepAction;
+   private Action continueAction;
+   private Action breakpointAction;
 
    private PrefDialog prefDialog;
 
@@ -833,6 +836,32 @@ public class Workbench extends JPanel {
          }
       };
 
+      this.breakpointAction = new AbstractAction("Töréspont ki/be") {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            int line = Workbench.this.progText.caretLine() - 1;
+            Workbench.this.progText.toggleBreakpoint(line);
+            Workbench.this.showTransientMessage(
+               Workbench.this.progText.isBreakpoint(line)
+                  ? "Töréspont a " + (line + 1) + ". soron."
+                  : "Töréspont törölve a " + (line + 1) + ". sorról.");
+         }
+      };
+
+      this.stepAction = new AbstractAction("Lépés") {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            Workbench.this.debugStep();
+         }
+      };
+
+      this.continueAction = new AbstractAction("Folytatás") {
+         private static final long serialVersionUID = 1L;
+         public void actionPerformed(ActionEvent e) {
+            Workbench.this.debugContinue();
+         }
+      };
+
       this.loadAction.putValue(Action.SHORT_DESCRIPTION, "Betöltés  (Ctrl+O)");
       this.saveAction.putValue(Action.SHORT_DESCRIPTION, "Mentés  (Ctrl+S)");
       this.saveAsAction.putValue(Action.SHORT_DESCRIPTION, "Mentés másként  (Ctrl+Shift+S)");
@@ -843,6 +872,9 @@ public class Workbench extends JPanel {
       this.runAction.putValue(Action.SHORT_DESCRIPTION, "Futtatás  (F5)");
       this.stopAction.putValue(Action.SHORT_DESCRIPTION, "Futtatás vége  (Shift+F5)");
       this.stopAction.setEnabled(false);
+      this.breakpointAction.putValue(Action.SHORT_DESCRIPTION, "Töréspont ki/be  (F9)");
+      this.stepAction.putValue(Action.SHORT_DESCRIPTION, "Lépés  (F10)");
+      this.continueAction.putValue(Action.SHORT_DESCRIPTION, "Folytatás a következő töréspontig  (F6)");
       this.enterAction.putValue(Action.SHORT_DESCRIPTION, "Belépés alprogramba  (F11)");
       this.enterAction.setEnabled(false);
       this.leaveAction.putValue(Action.SHORT_DESCRIPTION, "Alprogram elhagyása  (Shift+F11)");
@@ -986,6 +1018,10 @@ public class Workbench extends JPanel {
                                      + state.getError() + "</font>", new ExprNode[0], (String) null));
                   }
                   Workbench.this.progRenderer.setCurrentLine(state.getLine());
+                  /* A szerkesztőben is emeljük ki az aktuális lépés sorát,
+                     hogy léptetésnél követhető legyen a végrehajtás. */
+                  Workbench.this.progText.setRunningLine(
+                     sourceLineForParsedIndex(state.getLine()));
                   Workbench.this.progList.repaint();
                   setStreamStates(Workbench.this.inpPanes, state);
                   setStreamStates(Workbench.this.outPanes, state);
@@ -1573,6 +1609,12 @@ public class Workbench extends JPanel {
       content.add(javax.swing.Box.createVerticalStrut(4));
       content.add(stopBtn);
       content.add(javax.swing.Box.createVerticalStrut(12));
+      content.add(sideButton(stepAction, VSIcons.STEP_INTO, "Lépés  (F10)"));
+      content.add(javax.swing.Box.createVerticalStrut(4));
+      content.add(sideButton(continueAction, VSIcons.PLAY, "Folytatás  (F6)"));
+      content.add(javax.swing.Box.createVerticalStrut(4));
+      content.add(sideButton(breakpointAction, VSIcons.ERROR, "Töréspont  (F9)"));
+      content.add(javax.swing.Box.createVerticalStrut(12));
       content.add(editBtn);
       content.add(javax.swing.Box.createVerticalStrut(4));
       content.add(copyBtn);
@@ -1688,6 +1730,10 @@ public class Workbench extends JPanel {
       runMenu.add(menuItem(runAction, 0));
       runMenu.add(menuItem(stopAction, 0));
       runMenu.addSeparator();
+      runMenu.add(menuItem(breakpointAction, 0));
+      runMenu.add(menuItem(stepAction, 0));
+      runMenu.add(menuItem(continueAction, 0));
+      runMenu.addSeparator();
       runMenu.add(menuItem(editAction, 0));
       runMenu.add(menuItem(copyAction, 0));
       if (subProgramsEnabled()) {
@@ -1743,6 +1789,9 @@ public class Workbench extends JPanel {
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, mask), "decFont", decreaseFontAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_SUBTRACT, mask), "decFont2", decreaseFontAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F1, 0), "help", helpAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F9, 0), "breakpoint", breakpointAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F10, 0), "step", stepAction);
+      bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F6, 0), "continue", continueAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F11, 0), "enter", enterAction);
       bind(root, KeyStroke.getKeyStroke(KeyEvent.VK_F11, InputEvent.SHIFT_DOWN_MASK), "leave", leaveAction);
    }
@@ -1899,6 +1948,63 @@ public class Workbench extends JPanel {
       errorCursor = -1;
       parsedToSource = null;
       progText.setErrorLines(null);
+   }
+
+   /* ------------------------- debugger ------------------------- */
+
+   /** Biztosítja, hogy legyen végrehajtási állapot (ha nincs, lefuttat),
+       és a léptetés az első lépéstől indulhasson. */
+   private void ensureStates() {
+      if (stateTable.getRowCount() == 0) {
+         runAction.actionPerformed(null);
+         /* A léptetés az első állapottól induljon, ne a futás vége maradjon
+            kijelölve. */
+         stateTable.clearSelection();
+      }
+   }
+
+   /** Egy lépést halad a végrehajtásban (F10). */
+   private void debugStep() {
+      ensureStates();
+      int rows = stateTable.getRowCount();
+      if (rows == 0) {
+         showTransientMessage("Nincs futtatható program – előbb értelmezz (Ctrl+B).");
+         return;
+      }
+      int sel = stateTable.getSelectedRow();
+      int next = (sel < 0) ? 0 : Math.min(sel + 1, rows - 1);
+      stateTable.setRowSelectionInterval(next, next);
+      stateTable.scrollRectToVisible(stateTable.getCellRect(next, 0, true));
+      updateStatus();
+   }
+
+   /** A következő töréspontig (vagy a program végéig) fut (F6). */
+   private void debugContinue() {
+      ensureStates();
+      int rows = stateTable.getRowCount();
+      if (rows == 0) {
+         showTransientMessage("Nincs futtatható program – előbb értelmezz (Ctrl+B).");
+         return;
+      }
+      int sel = Math.max(stateTable.getSelectedRow(), -1);
+      StateList model = (StateList) stateTable.getModel();
+      int target = -1;
+      for (int r = sel + 1; r < rows; r++) {
+         State s = model.getState(r);
+         if (s != null && progText.isBreakpoint(sourceLineForParsedIndex(s.getLine()))) {
+            target = r;
+            break;
+         }
+      }
+      if (target < 0) {
+         target = rows - 1;
+      }
+      stateTable.setRowSelectionInterval(target, target);
+      stateTable.scrollRectToVisible(stateTable.getCellRect(target, 0, true));
+      updateStatus();
+      showTransientMessage(target == rows - 1
+         ? "Nincs további töréspont – a program végére értem."
+         : "Megállás a " + (target + 1) + ". lépésnél (töréspont).");
    }
 
    private void autoSizeStateColumns() {

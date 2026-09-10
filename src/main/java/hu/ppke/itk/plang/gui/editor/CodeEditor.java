@@ -52,6 +52,7 @@ public class CodeEditor extends JTextPane {
    private boolean lastCaseSensitive = false;
    private boolean refreshSuspended = false;
    private final java.util.Set<Integer> errorLines = new java.util.TreeSet<Integer>();
+   private final java.util.Set<Integer> breakpoints = new java.util.TreeSet<Integer>();
    private int runningLine = -1;
 
    private final PlangUndoManager undoManager = new PlangUndoManager();
@@ -259,6 +260,10 @@ public class CodeEditor extends JTextPane {
       repaint();
    }
 
+   public int getRunningLine() {
+      return runningLine;
+   }
+
    /** A hibás sor (0-alapú), vagy -1 – a többit törli. */
    public void setErrorLine(int line) {
       errorLines.clear();
@@ -296,6 +301,39 @@ public class CodeEditor extends JTextPane {
 
    public boolean isErrorLine(int line) {
       return errorLines.contains(Integer.valueOf(line));
+   }
+
+   /* ------------------------- töréspontok ------------------------- */
+
+   /** Töréspont ki/be a megadott (0-alapú) soron. */
+   public void toggleBreakpoint(int line) {
+      Integer l = Integer.valueOf(line);
+      if (line < 0 || line >= lineCount()) {
+         return;
+      }
+      if (!breakpoints.remove(l)) {
+         breakpoints.add(l);
+      }
+      repaint();
+   }
+
+   public boolean isBreakpoint(int line) {
+      return breakpoints.contains(Integer.valueOf(line));
+   }
+
+   /** A töréspontos sorok (0-alapú, növekvő sorrendben). */
+   public int[] getBreakpoints() {
+      int[] r = new int[breakpoints.size()];
+      int i = 0;
+      for (Integer v : breakpoints) {
+         r[i++] = v.intValue();
+      }
+      return r;
+   }
+
+   public void clearBreakpoints() {
+      breakpoints.clear();
+      repaint();
    }
 
    /** Az első hibás sor (0-alapú), vagy -1. */

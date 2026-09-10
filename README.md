@@ -52,6 +52,9 @@ ikonjával vagy a `Nézet ▸ Téma váltása` menüponttal.
 | `Ctrl+B` | Értelmezés |
 | `F5` | Futtatás |
 | `Shift+F5` | Futtatás vége |
+| `F9` | Töréspont ki/be az aktuális soron (vagy kattintás a sorszámsávra) |
+| `F10` | Lépés (step) – egy végrehajtási állapotot halad |
+| `F6` | Folytatás a következő töréspontig (vagy a program végéig) |
 | `Ctrl+F` | Keresés |
 | `Ctrl+H` | Csere |
 | `Ctrl+G` | Ugrás sorra |
@@ -61,7 +64,7 @@ ikonjával vagy a `Nézet ▸ Téma váltása` menüponttal.
 | `Tab` / `Shift+Tab` | Behúzás növelése / csökkentése |
 | `Ctrl+ +` / `Ctrl+ -` | Betűméret növelése / csökkentése |
 | `Ctrl`+egérgörgő | Betűméret állítás |
-| `Ctrl+Space` | Kódkiegészítés (kulcsszó-javaslat) |
+| `Ctrl+Space` | Kódkiegészítés (kontextusfüggő javaslat) |
 | `Ctrl+,` | Beállítások |
 
 További funkciók:
@@ -80,6 +83,12 @@ További funkciók:
 - **Hibajelölés és hibánkénti ugrás**: az értelmezés a szerkesztőben is megjelöli a hibás
   sorokat (piros pötty a sorszámsávban, vörös sorkiemelés); az állapotsor hiba-cellájára
   kattintva a következő hibára ugrik és kiírja az üzenetét.
+- **Debugger**: **töréspontok** (`F9`, vagy kattintás a sorszámsávra – piros pötty jelzi),
+  **lépésenkénti végrehajtás** (`F10`) és **folytatás a következő töréspontig** (`F6`).
+  Léptetés közben a szerkesztő kiemeli az aktuális lépés sorát, az állapottábla és a
+  kifejezésfa pedig mutatja a változók és a kifejezések értékét abban a lépésben.
+  (A motor előre kiszámolja az állapotokat, így a léptetés visszafelé is szabadon
+  lehetséges az állapottáblára kattintva.)
 - **Pontos futás-visszajelzés**: futás után az állapotsor nem állítja azt, hogy a program
   futna – „Kész – N lépés” jelenik meg, amíg a **Futtatás vége** ki nem üríti az eredményt.
 - **Futás után vissza a szerkesztőbe** (kapcsolható): a *Beállítások* között bekapcsolható,

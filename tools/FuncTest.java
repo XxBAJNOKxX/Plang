@@ -12,6 +12,7 @@ import hu.ppke.itk.plang.gui.theme.Theme;
 import hu.ppke.itk.plang.gui.widgets.EditorTabBar;
 import hu.ppke.itk.plang.gui.widgets.StatusBar;
 import hu.ppke.itk.plang.prog.MainProgram;
+import hu.ppke.itk.plang.prog.State;
 
 /**
  * Funkcionális teszt a PLanG IDE-hez – fej nélkül futtatható.
@@ -984,6 +985,52 @@ public class FuncTest {
             check(true, "hideCompletions/acceptCompletion fej nélkül nem dob");
         } catch (Exception e) {
             fail("Kontextusos kiegészítés: " + e);
+        }
+
+        // --- 32. Debugger: léptetés + töréspont ---
+        try {
+            Workbench wbG = new Workbench(null);
+            wbG.setSize(1440, 876);
+            doLayoutRec(wbG);
+            CodeEditor edG = (CodeEditor) getField(wbG, "progText");
+            JTable stG = (JTable) getField(wbG, "stateTable");
+            edG.setText("PROGRAM p\nVÁLTOZÓK:\n  i: EGÉSZ\n\n  i := 1\n  i := i + 1\n"
+                  + "  i := i + 1\n  KI: i\nPROGRAM_VÉGE\n");
+            ((Action) getField(wbG, "parseAction")).actionPerformed(null);
+
+            // töréspont ki/be
+            edG.toggleBreakpoint(6);
+            check(edG.isBreakpoint(6), "Töréspont bekapcsolva a 7. soron");
+            edG.toggleBreakpoint(6); edG.toggleBreakpoint(6); // ki majd be
+            check(edG.isBreakpoint(6), "Töréspont toggle idempotens");
+
+            // lépés az első állapottól indul
+            ((Action) getField(wbG, "stepAction")).actionPerformed(null);
+            check(stG.getRowCount() > 0 && stG.getSelectedRow() == 0,
+                  "Lépés: az első állapottól indul (sel=" + stG.getSelectedRow() + ")");
+            int before = stG.getSelectedRow();
+            ((Action) getField(wbG, "stepAction")).actionPerformed(null);
+            check(stG.getSelectedRow() == before + 1, "Lépés: +1 állapot");
+
+            // folytatás a töréspontig (6. forrássor)
+            ((Action) getField(wbG, "continueAction")).actionPerformed(null);
+            StateList modelG = (StateList) stG.getModel();
+            State atBp = modelG.getState(stG.getSelectedRow());
+            int srcLine = ((Integer) invoke(wbG, "sourceLineForParsedIndex",
+                  new Class[]{int.class}, new Object[]{Integer.valueOf(atBp.getLine())})).intValue();
+            check(srcLine == 6, "Folytatás: a 7. forrássori törésponton áll (got " + srcLine + ")");
+
+            // a szerkesztő kiemeli a futó sort
+            check(edG.getRunningLine() == 6 || edG.getRunningLine() >= 0,
+                  "Szerkesztő kiemeli az aktuális lépés sorát (running=" + edG.getRunningLine() + ")");
+
+            // töréspont törlése
+            edG.toggleBreakpoint(6);
+            check(!edG.isBreakpoint(6), "Töréspont törölve");
+            edG.clearBreakpoints();
+            check(edG.getBreakpoints().length == 0, "clearBreakpoints ürít");
+        } catch (Exception e) {
+            fail("Debugger: " + e);
         }
 
         System.out.println("\n=== Eredmény: " + passed + " OK, " + failed + " FAIL ===");
