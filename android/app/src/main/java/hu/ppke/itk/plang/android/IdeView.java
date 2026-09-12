@@ -174,9 +174,7 @@ public class IdeView extends LinearLayout {
         progList.setListener(new ProgramListView.ItemSelectListener() {
             @Override
             public void onSelected(int index) {
-                ProgramLine line = progList.getAt(index);
-                exprTree.setRoot(line == null ? null : line.getExpr(null));
-                exprTree.expandAll();
+                setExprRootSafe(progList.getAt(index), null);
             }
 
             @Override
@@ -979,7 +977,12 @@ public class IdeView extends LinearLayout {
                     handler.post(new Runnable() {
                         @Override
                         public void run() {
-                            applyParsed(prog, lines);
+                            try {
+                                applyParsed(prog, lines);
+                            } catch (final Throwable t) {
+                                errorBox("HIBA", "Belső hiba történt az értelmezés "
+                                        + "megjelenítése közben.");
+                            }
                         }
                     });
                 } catch (final Throwable t) {
@@ -1447,11 +1450,28 @@ public class IdeView extends LinearLayout {
             linesArr[i] = ((Integer) errorList.get(i)[0]).intValue();
         }
         progText.setErrorLines(linesArr);
+        /* Az asztali változattal megegyezően csak kijelöljük az első
+           hibás sort: a kifejezésfa építése (getExpr) hiányos AST-nál
+           (pl. nem deklarált változós BE:) kivétellel elszállna. */
         if (firstError >= 0) {
             progList.setSelectedIndex(firstError);
-            exprTree.setRoot(lines.get(firstError).getExpr(null));
-            exprTree.expandAll();
         }
+    }
+
+    /** Kifejezésfa biztonságos beállítása: hiányos (hibás) soroknál az
+        AST egyes részei – pl. a BE: accessorja – nullák lehetnek; ilyenkor
+        üres fát mutatunk az összeomlás helyett. */
+    private void setExprRootSafe(ProgramLine line, State state) {
+        ExprNode root = null;
+        if (line != null) {
+            try {
+                root = line.getExpr(state);
+            } catch (Exception e) {
+                root = null;
+            }
+        }
+        exprTree.setRoot(root);
+        exprTree.expandAll();
     }
 
     /** A következő hibára ugrik, és kiírja az üzenetét. */
@@ -1494,7 +1514,7 @@ public class IdeView extends LinearLayout {
             ProgramLine line = progList.getAt(state.getLine());
             if (state.getError() == null) {
                 progList.setSelectedIndex(state.getLine());
-                exprTree.setRoot(line == null ? null : line.getExpr(state));
+                setExprRootSafe(line, state);
             } else {
                 progList.setSelectedIndex(state.getLine());
                 exprTree.setRoot(new ExprNode(
