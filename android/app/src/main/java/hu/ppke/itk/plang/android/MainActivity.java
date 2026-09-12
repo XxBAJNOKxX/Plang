@@ -145,7 +145,12 @@ public class MainActivity extends Activity implements IdeView.Host {
 
     private void showMenu(View anchor, Object[][] items) {
         anchorOf = anchor;
-        PopupMenu pm = new PopupMenu(this, anchor);
+        /* A felugró menü a téma szerint világos/sötét stílusú legyen
+           (a stílusazonosítót futásidőben oldjuk fel). */
+        int styleId = getResources().getIdentifier(
+                Theme.mode() == Theme.LIGHT ? "PlangPopupLight" : "PlangPopupDark",
+                "style", getPackageName());
+        PopupMenu pm = new PopupMenu(new android.view.ContextThemeWrapper(this, styleId), anchor);
         buildMenuItems(pm, items);
         pm.show();
     }
@@ -290,6 +295,18 @@ public class MainActivity extends Activity implements IdeView.Host {
         getWindow().setStatusBarColor(Theme.p().titleBar);
         getWindow().setNavigationBarColor(Theme.p().activityBar);
         getWindow().setBackgroundDrawable(new ColorDrawable(Theme.p().editorBg));
+        /* Világos témában a rendszer-állapotsáv (óra, akku) ikonjai
+           sötétek legyenek, különben eltűnnének a világos háttéren. */
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            View decor = getWindow().getDecorView();
+            int vis = decor.getSystemUiVisibility();
+            if (Theme.mode() == Theme.LIGHT) {
+                vis |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            } else {
+                vis &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            }
+            decor.setSystemUiVisibility(vis);
+        }
     }
 
     @Override

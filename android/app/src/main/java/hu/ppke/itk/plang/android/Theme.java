@@ -188,8 +188,8 @@ public final class Theme {
         return new Palette(DARK, new int[] {
             h("3C3C3C"), h("CCCCCC"),
             h("333333"), h("858585"), h("FFFFFF"), h("FFFFFF"),
-            h("252526"), h("CCCCCC"), h("BBBBBB"), h("CCCCCC"),
-            h("1E1E1E"), h("007FD4"), h("444444"),
+            h("252526"), h("CCCCCC"), h("BBBBBB"), h("333333"),
+            h("454545"), h("007FD4"), h("444444"),
             h("1E1E1E"), h("D4D4D4"),
             h("858585"), h("C6C6C6"),
             h("282828"), h("282828"),
