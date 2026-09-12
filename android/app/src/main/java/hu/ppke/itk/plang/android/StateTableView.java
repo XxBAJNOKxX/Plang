@@ -114,9 +114,23 @@ public class StateTableView extends LinearLayout {
             }
         }
         computeColumnWidths();
+        // a lista szélessége az oszlopok összeszélessége, hogy a
+        // vízszintes görgetés a teljes táblát elérje
+        int total = 0;
+        if (colWidths != null) {
+            for (int w : colWidths) {
+                total += w;
+            }
+        }
+        ViewGroup.LayoutParams lp = body.getLayoutParams();
+        if (lp != null) {
+            lp.width = Math.max(total, 1);
+            body.setLayoutParams(lp);
+        }
         adapter.notifyDataSetChanged();
         header.requestLayout();
         header.invalidate();
+        body.requestLayout();
         invalidate();
     }
 

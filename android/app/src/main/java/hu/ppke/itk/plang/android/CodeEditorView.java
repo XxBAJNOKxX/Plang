@@ -98,11 +98,15 @@ public class CodeEditorView extends EditText {
 
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
-                if (!suspendUndo && count > 0) {
-                    undoManager.onEdit(true, start, s.subSequence(start, start + count).toString(),
-                                       (int) before);
-                } else if (!suspendUndo && before > 0) {
-                    undoManager.onEdit(false, start, removedText, (int) before);
+                if (!suspendUndo) {
+                    // csere esetén először a törlést, majd a beszúrást rögzítjük
+                    if (before > 0) {
+                        undoManager.onEdit(false, start, removedText, (int) before);
+                    }
+                    if (count > 0) {
+                        undoManager.onEdit(true, start,
+                                s.subSequence(start, start + count).toString(), (int) before);
+                    }
                 }
                 // a kurzor mozgása bezárja a javaslatlistát (a fel/le kivétel)
                 if (isCompletionActive() && Math.abs(count - before) > 1) {
