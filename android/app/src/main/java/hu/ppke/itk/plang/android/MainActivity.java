@@ -145,6 +145,13 @@ public class MainActivity extends Activity implements IdeView.Host {
 
     private void showMenu(View anchor, Object[][] items) {
         anchorOf = anchor;
+        /* A megnyitás pillanatában is garantáljuk az olvasható címszínt. */
+        for (int i = 0; i < menuBar.getChildCount(); i++) {
+            View c = menuBar.getChildAt(i);
+            if (c instanceof TextView) {
+                ((TextView) c).setTextColor(Theme.readableOn(Theme.p().titleBar));
+            }
+        }
         /* A felugró menü a téma szerint világos/sötét stílusú legyen
            (a stílusazonosítót futásidőben oldjuk fel). */
         int styleId = getResources().getIdentifier(
@@ -288,6 +295,7 @@ public class MainActivity extends Activity implements IdeView.Host {
                 ((TextView) c).setTextColor(Theme.readableOn(Theme.p().titleBar));
             }
         }
+        titleView.setTextColor(Theme.readableOn(Theme.p().titleBar));
         titleView.setText(ide.hasUnsavedChanges() ? "PLanG – " + ide.currentFileName() + " •" : ide.currentFileName() + " – PLanG");
     }
 
