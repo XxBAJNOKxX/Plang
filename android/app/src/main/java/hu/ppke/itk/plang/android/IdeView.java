@@ -322,8 +322,10 @@ public class IdeView extends LinearLayout {
         runPanel = buildRunPanel();
         searchPanel = buildSearchPanel();
         sideBar.addView(explorerPanel);
-        sideBar.addView(runPanel, GONE);
-        sideBar.addView(searchPanel, GONE);
+        sideBar.addView(runPanel);
+        runPanel.setVisibility(GONE);
+        sideBar.addView(searchPanel);
+        searchPanel.setVisibility(GONE);
         LayoutParams sideLp = new LayoutParams(sideWidth, LayoutParams.MATCH_PARENT);
         sideBar.setLayoutParams(sideLp);
 
@@ -349,7 +351,8 @@ public class IdeView extends LinearLayout {
 
         progPanel = new FrameLayout(ctx);
         progPanel.addView(editorHolder);
-        progPanel.addView(listScroll, GONE);
+        progPanel.addView(listScroll);
+        listScroll.setVisibility(GONE);
 
         editorArea = new LinearLayout(ctx);
         editorArea.setOrientation(VERTICAL);
