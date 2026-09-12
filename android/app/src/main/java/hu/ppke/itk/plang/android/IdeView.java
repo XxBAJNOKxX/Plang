@@ -68,7 +68,6 @@ public class IdeView extends LinearLayout {
     private GutterView gutter;
     private FindBarView findBar;
     private ProgramListView progList;
-    private ScrollView listScroll;
 
     private StreamPanesView inpPanes;
     private StreamPanesView outPanes;
@@ -111,6 +110,12 @@ public class IdeView extends LinearLayout {
     private Button stepBtn, continueBtn, breakpointBtn;
     /* a kifejezésfa fejlécének ikon-gombjai (alprogramba lépés/kilépés) */
     private Button headerEnterBtn, headerLeaveBtn;
+    /* a konzol- és vizsgálópanelek (téma váltásnál újraszínezve) */
+    private LinearLayout inputWrap, outputWrap, varsPanelBox, exprPanelBox;
+    private TextView searchHint;
+    private final java.util.List<PanelHeader> headers = new ArrayList<PanelHeader>();
+    /* (gomb, stílus, ikon) hármasok: téma váltásnál újra stílust kapnak */
+    private final java.util.List<Object[]> styledButtons = new ArrayList<Object[]>();
 
     public IdeView(Context ctx, Host host) {
         super(ctx);
@@ -346,14 +351,12 @@ public class IdeView extends LinearLayout {
         editorHolder.addView(editorRow, new LinearLayout.LayoutParams(
                 LayoutParams.MATCH_PARENT, 0, 1f));
 
-        listScroll = new ScrollView(ctx);
-        listScroll.addView(progList, new FrameLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-
+        /* A lista önállóan is görget; ScrollView-ba csomagolva csak az első
+           sor renderselődött le, ezért közvetlenül kerül a nézetváltóba. */
         progPanel = new FrameLayout(ctx);
         progPanel.addView(editorHolder);
-        progPanel.addView(listScroll);
-        listScroll.setVisibility(GONE);
+        progPanel.addView(progList);
+        progList.setVisibility(GONE);
 
         editorArea = new LinearLayout(ctx);
         editorArea.setOrientation(VERTICAL);
@@ -426,7 +429,9 @@ public class IdeView extends LinearLayout {
     private LinearLayout buildExplorerPanel() {
         Context ctx = getContext();
         LinearLayout p = panel(ctx, Theme.p().sideBar);
-        p.addView(new PanelHeader(ctx, "Kezelő"));
+        PanelHeader explorerHead = new PanelHeader(ctx, "Kezelő");
+        headers.add(explorerHead);
+        p.addView(explorerHead);
 
         ScrollView sc = new ScrollView(ctx);
         LinearLayout content = new LinearLayout(ctx);
@@ -434,7 +439,8 @@ public class IdeView extends LinearLayout {
         int pad = FlatButton.dp(ctx, 10);
         content.setPadding(pad, pad, pad, pad);
 
-        Button newBtn = FlatButton.create(ctx, FlatButton.SECONDARY, "Új program");
+        Button newBtn = registerBtn(FlatButton.create(ctx, FlatButton.SECONDARY, "Új program"),
+                FlatButton.SECONDARY, VsIcons.NEW);
         newBtn.setCompoundDrawablesWithIntrinsicBounds(FlatButton.icon(ctx, VsIcons.NEW, Theme.p().buttonSecondaryFg), null, null, null);
         newBtn.setOnClickListener(new OnClickListener() {
             @Override
@@ -442,7 +448,8 @@ public class IdeView extends LinearLayout {
                 doNew();
             }
         });
-        Button openBtn = FlatButton.create(ctx, FlatButton.SECONDARY, "Megnyitás…");
+        Button openBtn = registerBtn(FlatButton.create(ctx, FlatButton.SECONDARY, "Megnyitás…"),
+                FlatButton.SECONDARY, VsIcons.OPEN);
         openBtn.setCompoundDrawablesWithIntrinsicBounds(FlatButton.icon(ctx, VsIcons.OPEN, Theme.p().buttonSecondaryFg), null, null, null);
         openBtn.setOnClickListener(new OnClickListener() {
             @Override
@@ -450,7 +457,8 @@ public class IdeView extends LinearLayout {
                 doLoad();
             }
         });
-        saveBtn = FlatButton.create(ctx, FlatButton.SECONDARY, "Mentés…");
+        saveBtn = registerBtn(FlatButton.create(ctx, FlatButton.SECONDARY, "Mentés…"),
+                FlatButton.SECONDARY, VsIcons.SAVE);
         saveBtn.setCompoundDrawablesWithIntrinsicBounds(FlatButton.icon(ctx, VsIcons.SAVE, Theme.p().buttonSecondaryFg), null, null, null);
         saveBtn.setOnClickListener(new OnClickListener() {
             @Override
@@ -476,7 +484,8 @@ public class IdeView extends LinearLayout {
     }
 
     private PanelHeader outlineHeader(Context ctx) {
-        PanelHeader h = new PanelHeader(ctx, "Vázlat", VsIcons.TREE, -1);
+        PanelHeader h = new PanelHeader(ctx, "Vázlat", VsIcons.TREE, PanelHeader.ROLE_TITLE);
+        headers.add(h);
         int top = FlatButton.dp(ctx, 14);
         h.setPadding(h.getPaddingLeft(), top, h.getPaddingRight(), h.getPaddingBottom());
         return h;
@@ -485,7 +494,9 @@ public class IdeView extends LinearLayout {
     private LinearLayout buildRunPanel() {
         Context ctx = getContext();
         LinearLayout p = panel(ctx, Theme.p().sideBar);
-        p.addView(new PanelHeader(ctx, "Futtatás és hibakeresés"));
+        PanelHeader runHead = new PanelHeader(ctx, "Futtatás és hibakeresés");
+        headers.add(runHead);
+        p.addView(runHead);
 
         ScrollView sc = new ScrollView(ctx);
         LinearLayout content = new LinearLayout(ctx);
@@ -493,7 +504,8 @@ public class IdeView extends LinearLayout {
         int pad = FlatButton.dp(ctx, 10);
         content.setPadding(pad, pad, pad, pad);
 
-        runBigBtn = FlatButton.create(ctx, FlatButton.PRIMARY, "Program futtatása");
+        runBigBtn = registerBtn(FlatButton.create(ctx, FlatButton.PRIMARY, "Program futtatása"),
+                FlatButton.PRIMARY, VsIcons.PLAY);
         runBigBtn.setCompoundDrawablesWithIntrinsicBounds(FlatButton.icon(ctx, VsIcons.PLAY, Theme.p().buttonFg), null, null, null);
         runBigBtn.setOnClickListener(new OnClickListener() {
             @Override
@@ -607,16 +619,19 @@ public class IdeView extends LinearLayout {
     private LinearLayout buildSearchPanel() {
         Context ctx = getContext();
         LinearLayout p = panel(ctx, Theme.p().sideBar);
-        p.addView(new PanelHeader(ctx, "Keresés"));
+        PanelHeader searchHead = new PanelHeader(ctx, "Keresés");
+        headers.add(searchHead);
+        p.addView(searchHead);
         LinearLayout content = new LinearLayout(ctx);
         content.setOrientation(VERTICAL);
         int pad = FlatButton.dp(ctx, 10);
         content.setPadding(pad, pad, pad, pad);
-        TextView hint = new TextView(ctx);
-        hint.setText("A kereséshez használd a szerkesztő fölött megjelenő keresősávot.");
-        hint.setTextColor(Theme.p().sideBarFg);
-        hint.setTextSize(12);
-        Button open = FlatButton.create(ctx, FlatButton.SECONDARY, "Keresősáv megnyitása");
+        searchHint = new TextView(ctx);
+        searchHint.setText("A kereséshez használd a szerkesztő fölött megjelenő keresősávot.");
+        searchHint.setTextColor(Theme.p().sideBarFg);
+        searchHint.setTextSize(12);
+        Button open = registerBtn(FlatButton.create(ctx, FlatButton.SECONDARY, "Keresősáv megnyitása"),
+                FlatButton.SECONDARY, VsIcons.SEARCH);
         open.setCompoundDrawablesWithIntrinsicBounds(FlatButton.icon(ctx, VsIcons.SEARCH, Theme.p().buttonSecondaryFg), null, null, null);
         open.setOnClickListener(new OnClickListener() {
             @Override
@@ -624,7 +639,7 @@ public class IdeView extends LinearLayout {
                 doFind();
             }
         });
-        content.addView(hint);
+        content.addView(searchHint);
         content.addView(open, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         p.addView(content, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         return p;
@@ -636,7 +651,7 @@ public class IdeView extends LinearLayout {
                 FlatButton.icon(ctx, icon, Theme.p().buttonSecondaryFg), null, null, null);
         b.setOnClickListener(action);
         b.setMinHeight(FlatButton.dp(ctx, 34));
-        return b;
+        return registerBtn(b, FlatButton.SECONDARY, icon);
     }
 
     private LinearLayout panel(Context ctx, int bg) {
@@ -650,10 +665,17 @@ public class IdeView extends LinearLayout {
         Context ctx = getContext();
         LinearLayout p = panel(ctx, Theme.p().panelBg);
         p.setOrientation(VERTICAL);
-        int color = icon == VsIcons.INPUT ? Theme.p().info : Theme.p().success;
-        p.addView(new PanelHeader(ctx, title, icon, color));
+        int role = icon == VsIcons.INPUT ? PanelHeader.ROLE_INFO : PanelHeader.ROLE_SUCCESS;
+        PanelHeader h = new PanelHeader(ctx, title, icon, role);
+        headers.add(h);
+        p.addView(h);
         tabs.setLayoutParams(new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         p.addView(tabs);
+        if (icon == VsIcons.INPUT) {
+            inputWrap = p;
+        } else {
+            outputWrap = p;
+        }
         return p;
     }
 
@@ -665,20 +687,25 @@ public class IdeView extends LinearLayout {
         if (subProgramsEnabled()) {
             callStackBox = panel(ctx, Theme.p().panelBg);
             callStackBox.setOrientation(VERTICAL);
-            callStackBox.addView(new PanelHeader(ctx, "Hívási verem", VsIcons.CALLSTACK, Theme.p().synControl));
+            PanelHeader csHead = new PanelHeader(ctx, "Hívási verem", VsIcons.CALLSTACK, PanelHeader.ROLE_SYNCTRL);
+            headers.add(csHead);
+            callStackBox.addView(csHead);
             callStack.setLayoutParams(new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, FlatButton.dp(ctx, 80)));
             callStackBox.addView(callStack);
             p.addView(callStackBox);
         }
 
-        LinearLayout varsPanel = panel(ctx, Theme.p().panelBg);
-        varsPanel.setOrientation(VERTICAL);
-        varsPanel.addView(new PanelHeader(ctx, "Változók", VsIcons.VARIABLES, Theme.p().synType));
-        varsPanel.addView(stateTable, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.55f));
+        varsPanelBox = panel(ctx, Theme.p().panelBg);
+        varsPanelBox.setOrientation(VERTICAL);
+        PanelHeader varsHead = new PanelHeader(ctx, "Változók", VsIcons.VARIABLES, PanelHeader.ROLE_SYNTYPE);
+        headers.add(varsHead);
+        varsPanelBox.addView(varsHead);
+        varsPanelBox.addView(stateTable, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.55f));
 
-        LinearLayout exprPanel = panel(ctx, Theme.p().panelBg);
-        exprPanel.setOrientation(VERTICAL);
-        PanelHeader exprHeader = new PanelHeader(ctx, "Kifejezés kiértékelése", VsIcons.TREE, Theme.p().synFunction);
+        exprPanelBox = panel(ctx, Theme.p().panelBg);
+        exprPanelBox.setOrientation(VERTICAL);
+        PanelHeader exprHeader = new PanelHeader(ctx, "Kifejezés kiértékelése", VsIcons.TREE, PanelHeader.ROLE_SYNFUNC);
+        headers.add(exprHeader);
         /* A fejlécben csak ikon-gombok vannak (mint az asztali TOOL-gombok),
            hogy a cím elférjen mellette; a szöveges párjuk a Futtatás panelre
            kerül, ha az alprogram-mód be van kapcsolva. */
@@ -702,15 +729,21 @@ public class IdeView extends LinearLayout {
         headerLeaveBtn.setAlpha(0.4f);
         exprHeader.addAction(headerEnterBtn);
         exprHeader.addAction(headerLeaveBtn);
-        exprPanel.addView(exprHeader);
-        exprPanel.addView(exprTree, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.45f));
+        exprPanelBox.addView(exprHeader);
+        exprPanelBox.addView(exprTree, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.45f));
 
-        p.addView(varsPanel, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
-        p.addView(exprPanel, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
+        p.addView(varsPanelBox, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
+        p.addView(exprPanelBox, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         return p;
     }
 
     /* ==================== állapotátmenetek ==================== */
+
+    /** Gomb bejegyzése a téma-váltáskor újra stílust kapó gombok közé. */
+    private Button registerBtn(Button b, int style, int icon) {
+        styledButtons.add(new Object[]{b, Integer.valueOf(style), Integer.valueOf(icon)});
+        return b;
+    }
 
     private void setEnabled(Button b, boolean en) {
         if (b != null) {
@@ -1525,6 +1558,32 @@ public class IdeView extends LinearLayout {
         }
         callStack.applyTheme();
         outline.applyTheme();
+
+        /* A panelek és fejlécek az építéskor kapott színt őrizték, ezért
+           témaváltásnál sötét maradtak világos módban: most minden rögzített
+           szín az aktuális palettáról frissül. */
+        if (inputWrap != null) inputWrap.setBackgroundColor(p.panelBg);
+        if (outputWrap != null) outputWrap.setBackgroundColor(p.panelBg);
+        if (varsPanelBox != null) varsPanelBox.setBackgroundColor(p.panelBg);
+        if (exprPanelBox != null) exprPanelBox.setBackgroundColor(p.panelBg);
+        for (PanelHeader h : headers) {
+            h.applyTheme();
+        }
+        for (Object[] sb : styledButtons) {
+            Button b = (Button) sb[0];
+            int style = ((Integer) sb[1]).intValue();
+            int icon = ((Integer) sb[2]).intValue();
+            FlatButton.applyStyle(b, style);
+            if (icon >= 0) {
+                int tint = (style == FlatButton.PRIMARY) ? p.buttonFg : p.buttonSecondaryFg;
+                FlatButton.setIconButton(b, icon, tint);
+            }
+        }
+        FlatButton.setIconButton(headerEnterBtn, VsIcons.STEP_INTO, p.sideBarFg);
+        FlatButton.setIconButton(headerLeaveBtn, VsIcons.STEP_OUT, p.sideBarFg);
+        if (searchHint != null) {
+            searchHint.setTextColor(p.sideBarFg);
+        }
         invalidate();
     }
 

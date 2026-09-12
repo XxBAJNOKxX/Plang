@@ -26,6 +26,8 @@ public class FindBarView extends LinearLayout {
     private final CheckBox caseBox;
     private final Button replaceToggle;
     private final LinearLayout replaceRow;
+    private final Button prevBtn, nextBtn, closeBtn, repBtn, repAllBtn;
+    private boolean replaceOpen = false;
 
     private CloseListener closeListener;
 
@@ -47,15 +49,13 @@ public class FindBarView extends LinearLayout {
         replaceToggle = FlatButton.iconButton(ctx, VsIcons.CHEVRON_RIGHT, Theme.p().sideBarFg,
                 "Csere megnyitása");
         replaceToggle.setOnClickListener(new OnClickListener() {
-            boolean open = false;
             @Override
             public void onClick(View v) {
-                open = !open;
-                replaceRow.setVisibility(open ? VISIBLE : GONE);
-                ((Button) v).setCompoundDrawablesWithIntrinsicBounds(
-                        FlatButton.icon(getContext(),
-                                open ? VsIcons.CHEVRON_DOWN : VsIcons.CHEVRON_RIGHT,
-                                Theme.p().sideBarFg), null, null, null);
+                replaceOpen = !replaceOpen;
+                replaceRow.setVisibility(replaceOpen ? VISIBLE : GONE);
+                FlatButton.setIconButton(replaceToggle,
+                        replaceOpen ? VsIcons.CHEVRON_DOWN : VsIcons.CHEVRON_RIGHT,
+                        Theme.p().sideBarFg);
             }
         });
         findRow.addView(replaceToggle);
@@ -81,6 +81,7 @@ public class FindBarView extends LinearLayout {
         findRow.addView(countLabel);
 
         Button prev = FlatButton.iconButton(ctx, VsIcons.ARROW_UP, Theme.p().sideBarFg, "Előző találat");
+        prevBtn = prev;
         prev.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -92,6 +93,7 @@ public class FindBarView extends LinearLayout {
         findRow.addView(prev);
 
         Button next = FlatButton.iconButton(ctx, VsIcons.ARROW_DOWN, Theme.p().sideBarFg, "Következő találat");
+        nextBtn = next;
         next.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -103,6 +105,7 @@ public class FindBarView extends LinearLayout {
         findRow.addView(next);
 
         Button close = FlatButton.iconButton(ctx, VsIcons.CLOSE, Theme.p().sideBarFg, "Bezárás");
+        closeBtn = close;
         close.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -129,6 +132,7 @@ public class FindBarView extends LinearLayout {
         replaceRow.addView(replaceField, new LinearLayout.LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
 
         Button rep = FlatButton.create(ctx, FlatButton.SECONDARY, "Csere");
+        repBtn = rep;
         rep.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -141,6 +145,7 @@ public class FindBarView extends LinearLayout {
         replaceRow.addView(rep);
 
         Button repAll = FlatButton.create(ctx, FlatButton.SECONDARY, "Mind");
+        repAllBtn = repAll;
         repAll.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -213,10 +218,9 @@ public class FindBarView extends LinearLayout {
 
     public void showBarWithReplace(String selection) {
         showBar(selection);
+        replaceOpen = true;
         replaceRow.setVisibility(VISIBLE);
-        ((Button) replaceToggle).setCompoundDrawablesWithIntrinsicBounds(
-                FlatButton.icon(getContext(), VsIcons.CHEVRON_DOWN, Theme.p().sideBarFg),
-                null, null, null);
+        FlatButton.setIconButton(replaceToggle, VsIcons.CHEVRON_DOWN, Theme.p().sideBarFg);
     }
 
     private void styleField(EditText f) {
@@ -237,6 +241,15 @@ public class FindBarView extends LinearLayout {
         styleField(replaceField);
         countLabel.setTextColor(p.sideBarFg);
         caseBox.setTextColor(p.sideBarFg);
+        if (repBtn != null) {
+            FlatButton.applyStyle(repBtn, FlatButton.SECONDARY);
+            FlatButton.applyStyle(repAllBtn, FlatButton.SECONDARY);
+            FlatButton.setIconButton(prevBtn, VsIcons.ARROW_UP, p.sideBarFg);
+            FlatButton.setIconButton(nextBtn, VsIcons.ARROW_DOWN, p.sideBarFg);
+            FlatButton.setIconButton(closeBtn, VsIcons.CLOSE, p.sideBarFg);
+            FlatButton.setIconButton(replaceToggle,
+                    replaceOpen ? VsIcons.CHEVRON_DOWN : VsIcons.CHEVRON_RIGHT, p.sideBarFg);
+        }
         invalidate();
     }
 }

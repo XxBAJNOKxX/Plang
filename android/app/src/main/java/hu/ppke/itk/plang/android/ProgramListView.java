@@ -119,6 +119,7 @@ public class ProgramListView extends ListView {
     }
 
     public void applyTheme() {
+        setBackgroundColor(Theme.p().editorBg);
         adapter.notifyDataSetChanged();
         invalidate();
     }

@@ -9,35 +9,48 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 /**
- * Panelek fejléce („Kezelő”, „Változók” stb.) – a asztali widgets.PanelHeader
+ * Panelek fejléce („Kezelő”, „Változók” stb.) – az asztali widgets.PanelHeader
  * megfelelője, opcionális ikonnal és jobb oldali gombokkal.
+ *
+ * Az ikon színét szerepkör (role) azonosítja, nem konkrét színként: így a
+ * téma váltásakor az {@link #applyTheme()} az aktuális palettáról számolja
+ * újra (az építéskor rögzített szín a másik témához csúszna be).
  */
 public class PanelHeader extends LinearLayout {
 
+    /** Színszerepkörök (a téma mezőihez rendelve). */
+    public static final int ROLE_TITLE = 0;      // sideBarTitleFg
+    public static final int ROLE_INFO = 1;       // info
+    public static final int ROLE_SUCCESS = 2;    // success
+    public static final int ROLE_SYNTYPE = 3;    // synType
+    public static final int ROLE_SYNFUNC = 4;    // synFunction
+    public static final int ROLE_SYNCTRL = 5;    // synControl
+
     private final TextView title;
     private final LinearLayout actions;
-    private int iconType = -1;
-    private int iconColor = -1;
+    private final int iconType;
+    private final int colorRole;
 
     public PanelHeader(Context ctx, String text) {
-        this(ctx, text, -1, -1);
+        this(ctx, text, -1, ROLE_TITLE);
     }
 
-    public PanelHeader(Context ctx, String text, int iconType, int iconColor) {
+    public PanelHeader(Context ctx, String text, int iconType, int colorRole) {
         super(ctx);
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER_VERTICAL);
         int pad = FlatButton.dp(ctx, 8);
         setPadding(pad, pad, pad, pad);
         this.iconType = iconType;
-        this.iconColor = iconColor;
+        this.colorRole = colorRole;
 
         if (iconType >= 0) {
             ImageView iv = new ImageView(ctx);
             iv.setImageDrawable(VsIcons.icon(iconType, FlatButton.dp(ctx, 14),
-                                             iconColor == -1 ? Theme.p().sideBarTitleFg : iconColor));
+                    colorForRole(colorRole)));
             addView(iv, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
-            addView(space(ctx, 6));
+            LayoutParams sp = new LayoutParams(FlatButton.dp(ctx, 6), 1);
+            addView(new android.view.View(ctx), sp);
         }
 
         title = new TextView(ctx);
@@ -54,6 +67,19 @@ public class PanelHeader extends LinearLayout {
         addView(actions, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
     }
 
+    /** A szerepkörhöz tartozó szín az aktuális palettából. */
+    public static int colorForRole(int role) {
+        Theme.Palette p = Theme.p();
+        switch (role) {
+            case ROLE_INFO: return p.info;
+            case ROLE_SUCCESS: return p.success;
+            case ROLE_SYNTYPE: return p.synType;
+            case ROLE_SYNFUNC: return p.synFunction;
+            case ROLE_SYNCTRL: return p.synControl;
+            default: return p.sideBarTitleFg;
+        }
+    }
+
     public void addAction(android.view.View v) {
         actions.addView(v);
     }
@@ -64,23 +90,10 @@ public class PanelHeader extends LinearLayout {
         for (int i = 0; i < getChildCount(); i++) {
             android.view.View c = getChildAt(i);
             if (c instanceof ImageView && iconType >= 0) {
-                ((ImageView) c).setImageDrawable(VsIcons.icon(iconType, FlatButton.dp(getContext(), 14),
-                        iconColor == -1 ? p.sideBarTitleFg : iconColor));
-            }
-        }
-        for (int i = 0; i < actions.getChildCount(); i++) {
-            android.view.View a = actions.getChildAt(i);
-            if (a instanceof android.widget.Button) {
-                ((android.widget.Button) a).setTextColor(p.sideBarFg);
+                ((ImageView) c).setImageDrawable(VsIcons.icon(iconType,
+                        FlatButton.dp(getContext(), 14), colorForRole(colorRole)));
             }
         }
         invalidate();
-    }
-
-    static android.view.View space(Context ctx, int px) {
-        android.view.View v = new android.view.View(ctx);
-        LayoutParams lp = new LayoutParams(px, 1);
-        v.setLayoutParams(lp);
-        return v;
     }
 }

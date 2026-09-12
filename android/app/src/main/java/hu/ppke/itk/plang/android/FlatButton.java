@@ -79,6 +79,14 @@ public final class FlatButton {
         return b;
     }
 
+    /** Meglévő ikon-gomb színének frissítése (téma váltásnál). */
+    public static void setIconButton(Button b, int iconType, int color) {
+        if (b == null) {
+            return;
+        }
+        b.setCompoundDrawablesWithIntrinsicBounds(icon(b.getContext(), iconType, color), null, null, null);
+    }
+
     public static Drawable icon(Context ctx, int iconType, int color) {
         int size = dp(ctx, 16);
         return VsIcons.icon(iconType, size, color);
