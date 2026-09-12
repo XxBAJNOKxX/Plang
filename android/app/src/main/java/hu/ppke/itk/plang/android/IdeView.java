@@ -681,8 +681,12 @@ public class IdeView extends LinearLayout {
         Context ctx = getContext();
         LinearLayout p = panel(ctx, Theme.p().panelBg);
         p.setOrientation(VERTICAL);
-        /* A fül saját maga írja a csatorna nevét (BEMENET/KIMENET), a külső
-           fejléc csak megkettőzné – ezért nincs külön PanelHeader. */
+        /* A panel címét a fejléc viseli; a belső fülcsík (BEMENET/KIMENET)
+           egyetlen csatornánál felesleges, a StreamPanesView elrejti. */
+        int role = icon == VsIcons.INPUT ? PanelHeader.ROLE_INFO : PanelHeader.ROLE_SUCCESS;
+        PanelHeader h = new PanelHeader(ctx, title, icon, role);
+        headers.add(h);
+        p.addView(h);
         tabs.setLayoutParams(new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         p.addView(tabs);
         if (icon == VsIcons.INPUT) {
@@ -1079,13 +1083,33 @@ public class IdeView extends LinearLayout {
             outPanes.setStream(outPanes.getTitleAt(i), output.get(outPanes.getTitleAt(i)));
         }
         lastStepCount = stateTable.rowCount();
-        stateTable.setSelectedRow(lastStepCount - 1);
+
+        /* Ha van kijelölt töréspont, a futás az elsőnél megáll: a sor
+           kijelölésre kerül, onnan léptethető/folytatható. */
+        int stopRow = -1;
+        if (progText.getBreakpoints().length > 0) {
+            for (int r = 0; r < lastStepCount; r++) {
+                State s = stateTable.getState(r);
+                if (s != null && progText.isBreakpoint(sourceLineForParsedIndex(s.getLine()))) {
+                    stopRow = r;
+                    break;
+                }
+            }
+        }
+        stateTable.setSelectedRow(stopRow >= 0 ? stopRow : lastStepCount - 1);
+        onStateSelected();
         updateStatus();
 
         boolean hadError = last != null && last.getError() != null;
         finishedState(hadError);
-        if (backToEditor) {
+        /* Töréspontnál maradjunk az állapottáblán az automatikus
+           visszalépés helyett – innen lehet léptetni. */
+        if (backToEditor && stopRow < 0) {
             editState();
+        }
+        if (stopRow >= 0) {
+            showTransientMessage("Megállás a " + (stopRow + 1)
+                                 + ". lépésnél (töréspont).");
         }
         if (hadError) {
             errorBox("Futási hiba",

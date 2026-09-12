@@ -188,12 +188,15 @@ public class StreamPanesView extends LinearLayout {
 
         if (panes.isEmpty()) {
             tabs.clearTabs();
+            tabs.setVisibility(GONE);
             showPage(null);
             emptyPage.setVisibility(VISIBLE);
         } else {
             emptyPage.setVisibility(GONE);
             tabs.select(panes.get(0).title);
             showPage(panes.get(0).title);
+            /* Egyetlen csatorna esetén a fülcsík csak a fejlécet duplikálná. */
+            tabs.setVisibility(panes.size() > 1 ? VISIBLE : GONE);
         }
         applyTheme();
     }

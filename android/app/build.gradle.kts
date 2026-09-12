@@ -57,8 +57,8 @@ android {
         applicationId = "hu.ppke.itk.plang"
         minSdk = 21
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.6"
+        versionCode = 3
+        versionName = "1.7"
     }
 
     sourceSets {

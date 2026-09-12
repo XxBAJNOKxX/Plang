@@ -115,6 +115,8 @@ public class CodeEditorView extends EditText {
                 if (isCompletionActive() && Math.abs(count - before) > 1) {
                     hideCompletions();
                 }
+                // a sorszám-sáv a régi sorcountsámmal maradt volna ott
+                invalidateGutter();
             }
 
             @Override
@@ -655,6 +657,13 @@ public class CodeEditorView extends EditText {
             }
         }
         super.onDraw(g);
+    }
+
+    @Override
+    protected void onScrollChanged(int horiz, int vert, int oldHoriz, int oldVert) {
+        super.onScrollChanged(horiz, vert, oldHoriz, oldVert);
+        // a sorszám-sáv a szerkesztő görgetését követi
+        invalidateGutter();
     }
 
     /* =================== megjelenés =================== */
