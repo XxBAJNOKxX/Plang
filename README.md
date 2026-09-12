@@ -5,11 +5,28 @@ teljesen újratervezett, **Visual Studio Code** stílusú felülettel.
 
 ![PLanG IDE](docs/screenshot-dark.png)
 
-## Indítás
+## Asztali indítás
 
 ```sh
 java -jar plang.jar
 ```
+
+## Android (tablet) változat
+
+A tároló tartalmazza a fejlesztőkörnyezet **Android tablet** változatát is
+az [`android/`](android/README.md) könyvtárban: ugyanaz a VS Code stílusú
+felület és funkciókészlet (értelmezés, futtatás, léptetés, töréspontok,
+állapottábla, kifejezésfa, csatornák, témák, kódkiegészítés, keresés/csere,
+ISO-8859-2 fájlok), a **`prog` értelmezőt változatlanul, forrásmegosztással**
+használva – így a nyelvi viselkedés bitre azonos az asztaliéval.
+
+```sh
+cd android && ./gradlew :app:assembleDebug   # APK: app/build/outputs/apk/debug/
+```
+
+Részletek: [android/README.md](android/README.md). A repó CI-je
+(`Android APK` workflow) minden pushra lefordítja és műtermékként feltölti
+az APK-t.
 
 ## Fordítás forrásból
 

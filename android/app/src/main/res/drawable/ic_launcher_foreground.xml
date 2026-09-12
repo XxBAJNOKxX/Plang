@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A PLanG "P_" jele az adaptív ikon előterében (a biztonságos zóna
+     kb. 66 része a 108-ból). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="30" android:translateY="30">
+        <path
+            android:fillColor="#F0F4FF"
+            android:pathData="M4,0 h12 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-7 v6 h-5 z M9,4.5 v9 h6 a1.5,1.5 0 0 0 1.5,-1.5 v-6 a1.5,1.5 0 0 0 -1.5,-1.5 z" />
+        <path
+            android:fillColor="#8CBEFF"
+            android:pathData="M23,10 h3.5 v17 h-3.5 z" />
+    </group>
+</vector>

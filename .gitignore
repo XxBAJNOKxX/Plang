@@ -1,2 +1,8 @@
 build/
 *.class
+# Android build
+.gradle/
+local.properties
+android/.idea/
+android/captures/
+*.apk.idsig

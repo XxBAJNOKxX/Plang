@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A tényleges színeket a Theme osztály kezeli kódból (az asztali
+         változathoz hasonlóan); ez csak az alap ablak-keretet adja. -->
+    <style name="PlangTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#1E1E1E</item>
+        <item name="android:colorBackground">#1E1E1E</item>
+        <item name="android:statusBarColor">#333333</item>
+        <item name="android:navigationBarColor">#333333</item>
+    </style>
+</resources>
