@@ -50,6 +50,9 @@ public class MainActivity extends Activity implements IdeView.Host {
 
         setContentView(root);
         applyWindowChrome();
+        /* Induláskor (újraindításkor is) garantáltan tiszta, leállított
+           állapotban nyisson – ne egy korábbi futás folytatásaként. */
+        ide.doStop();
     }
 
     /* ==================== menüsor ==================== */

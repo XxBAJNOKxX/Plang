@@ -287,6 +287,9 @@ public class IdeView extends LinearLayout {
         statusBar.add("enc", "ISO-8859-2", true);
         statusBar.add("lang", "PLanG", true);
         StatusBarView.Cell theme = statusBar.add("theme", "Sötét téma", true);
+        /* A futó build verziója állandóan látszik – így a frissítés
+           egyértelműen ellenőrizhető. */
+        statusBar.add("ver", "PLanG v" + BuildInfo.VERSION, true);
         theme.action = new Runnable() {
             @Override
             public void run() {
