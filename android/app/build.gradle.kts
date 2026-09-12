@@ -57,8 +57,8 @@ android {
         applicationId = "hu.ppke.itk.plang"
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.6"
     }
 
     sourceSets {
@@ -72,9 +72,28 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
+    signingConfigs {
+        /* A tárolóba vett debug-kulcs: minden build (debug ÉS release)
+           ugyanazzal az aláírással készül, így az "adb install -r" és a
+           csomagkezelő felül tudja írni a korábbi telepítést. (Eddig minden
+           CI-futás új, véletlen kulcsot generált – a frissítéshez előbb
+           el kellett távolítani a régi appot.) */
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         getByName("release") {
             isMinifyEnabled = false
+            // telepíthető legyen a release APK is
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

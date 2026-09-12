@@ -97,11 +97,11 @@ public class GutterView extends View {
 
             float cy = base - textSize * 0.35f;
 
-            // töréspont pötty
+            // töréspont pötty (kicsit nagyobb, hogy tableten is jól látszék)
             if (editor.isBreakpoint(i)) {
                 dotPaint.setColor(p.error);
                 g.drawCircle(FlatButton.dpf(getContext(), 8), cy,
-                             FlatButton.dpf(getContext(), 3.2f), dotPaint);
+                             FlatButton.dpf(getContext(), 4f), dotPaint);
             }
             // hibajelzés
             if (editor.isErrorLine(i)) {

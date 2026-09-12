@@ -1315,6 +1315,7 @@ public class IdeView extends LinearLayout {
     public void showHelp() {
         StringBuilder sb = new StringBuilder();
         sb.append("<h2>PLanG fejlesztőkörnyezet</h2>")
+          .append("<p>Android (tablet) változat &mdash; <b>v" + BuildInfo.VERSION + "</b></p>")
           .append("<p>PPKE ITK – programozási alapismeretek</p>")
           .append("<h3>Műveletek</h3>")
           .append("<p><b>Értelmezés</b> – a programszöveget végrehajtható alakba alakítja, jelzi a hibákat és létrehozza a csatornákat.</p>")
