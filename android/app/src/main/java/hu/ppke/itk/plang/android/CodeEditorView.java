@@ -276,8 +276,8 @@ public class CodeEditorView extends EditText {
         }
         int pos = Math.max(0, Math.min(length(), getSelectionStart()));
         int line = l.getLineForOffset(pos);
-        int yTop = l.getLineTop(line);
-        int yBottom = l.getLineBottom(line);
+        int yTop = l.getLineTop(line) + getPaddingTop();
+        int yBottom = l.getLineBottom(line) + getPaddingTop();
         if (yTop < getScrollY()) {
             scrollTo(0, yTop);
         } else if (yBottom > getScrollY() + getHeight() - getPaddingBottom()) {
@@ -549,38 +549,42 @@ public class CodeEditorView extends EditText {
         Theme.Palette p = Theme.p();
         Layout l = getLayout();
         if (l != null) {
-            int padLeft = getPaddingLeft();
-            int padRight = getPaddingRight();
-            int lh;
-            try {
-                lh = l.getLineBottom(0) - l.getLineTop(0);
-            } catch (Exception e) {
-                lh = getLineHeight();
-            }
+            /* A TextView a szöveget (compoundPaddingLeft, extendedPaddingTop)
+               eltolással rajzolja, tehát a Layout y=0 vonala a képernyőn a
+               paddingnél kezdődik: minden függőleges koordinátához a
+               paddingTop-et hozzá kell adni, a vízszintesekhez a paddingLeft-et.
+               A vászon ekkor már -scrollX/-scrollYra van tolatva, ezért a
+               teljes szélesség lefedése [scrollX, scrollX+szélesség]. */
+            final int padL = getPaddingLeft();
+            final int padT = getPaddingTop();
+            final int sx = getScrollX();
 
             // hibás sorok háttere
             for (Integer el : errorLines) {
                 int line = el.intValue();
                 if (line < l.getLineCount()) {
-                    int y = l.getLineTop(line);
+                    int y = l.getLineTop(line) + padT;
+                    int y2 = l.getLineBottom(line) + padT;
                     decorPaint.setColor(p.errorLineBg);
-                    g.drawRect(-getScrollX(), y, getWidth() - getScrollX() + padRight, y + lh, decorPaint);
+                    g.drawRect(sx, y, sx + getWidth(), y2, decorPaint);
                 }
             }
             // a futás aktuális sora
             if (runningLine >= 0 && runningLine < l.getLineCount()) {
-                int y = l.getLineTop(runningLine);
+                int y = l.getLineTop(runningLine) + padT;
+                int y2 = l.getLineBottom(runningLine) + padT;
                 decorPaint.setColor(Theme.alpha(p.warning, 45));
-                g.drawRect(-getScrollX(), y, getWidth() - getScrollX() + padRight, y + lh, decorPaint);
+                g.drawRect(sx, y, sx + getWidth(), y2, decorPaint);
             }
             // aktuális (kurzoros) sor
             int selS = Math.max(0, Math.min(length(), getSelectionStart()));
             int selE = Math.max(0, Math.min(length(), getSelectionEnd()));
             int caretLine = l.getLineForOffset(selS);
             if (selS == selE && !errorLines.contains(caretLine) && caretLine != runningLine) {
-                int y = l.getLineTop(caretLine);
+                int y = l.getLineTop(caretLine) + padT;
+                int y2 = l.getLineBottom(caretLine) + padT;
                 decorPaint.setColor(p.currentLine);
-                g.drawRect(-getScrollX(), y, getWidth() - getScrollX() + padRight, y + lh, decorPaint);
+                g.drawRect(sx, y, sx + getWidth(), y2, decorPaint);
             }
 
             // keresési találatok
@@ -598,10 +602,11 @@ public class CodeEditorView extends EditText {
                     if (e <= s) {
                         continue;
                     }
-                    float x1 = l.getPrimaryHorizontal(s);
-                    float x2 = l.getPrimaryHorizontal(e);
-                    int y = l.getLineTop(ln);
-                    g.drawRect(x1 - getScrollX(), y, x2 - getScrollX(), y + lh, decorPaint);
+                    float x1 = l.getPrimaryHorizontal(s) + padL;
+                    float x2 = l.getPrimaryHorizontal(e) + padL;
+                    int y = l.getLineTop(ln) + padT;
+                    int y2 = l.getLineBottom(ln) + padT;
+                    g.drawRect(x1, y, x2, y2, decorPaint);
                 }
             }
 
@@ -622,10 +627,11 @@ public class CodeEditorView extends EditText {
                     if (indent == 0) {
                         continue;
                     }
-                    int y = l.getLineTop(i);
-                    for (int c = tabSize; c < indent; c += tabSize) {
-                        float x = padLeft + c * charW;
-                        g.drawLine(x, y, x, y + lh, guidePaint);
+                    int y = l.getLineTop(i) + padT;
+                    int y2 = l.getLineBottom(i) + padT;
+                    for (int cc = tabSize; cc < indent; cc += tabSize) {
+                        float x = padL + cc * charW;
+                        g.drawLine(x, y, x, y2, guidePaint);
                     }
                 }
             }
@@ -640,6 +646,9 @@ public class CodeEditorView extends EditText {
         setTextColor(p.editorFg);
         setHighlightColor(p.selection);
         setHintTextColor(p.gutterFg);
+        // a tokenek színe az aktuális palettáról rajzolódik: téma váltásnál
+        // azonnal újraszínezzük, ne csak a következő gépeléskor
+        highlightAll();
         invalidate();
     }
 
@@ -1096,10 +1105,10 @@ public class CodeEditorView extends EditText {
             Layout l = getLayout();
             int pos = Math.max(0, Math.min(length(), getSelectionStart()));
             int line = l.getLineForOffset(pos);
-            float x = l.getPrimaryHorizontal(pos);
-            int y = l.getLineBottom(line);
+            float x = l.getPrimaryHorizontal(pos) + getPaddingLeft();
+            int y = l.getLineBottom(line) + getPaddingTop();
             completionPopup.showAsDropDown(this,
-                (int) (x - getScrollX() + getPaddingLeft()),
+                (int) (x - getScrollX()),
                 (int) (y - getScrollY() + FlatButton.dp(ctx, 4)));
         } catch (Exception e) {
             completionPopup.showAsDropDown(this, 0, 0);

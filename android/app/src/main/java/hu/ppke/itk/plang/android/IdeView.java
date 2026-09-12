@@ -109,6 +109,8 @@ public class IdeView extends LinearLayout {
     /* ---- gombok, amelyeket az állapotátmenetek engedélyeznek/tiltanak ---- */
     private Button runBigBtn, parseBtn, stopBtn, editBtn, copyBtn, saveBtn;
     private Button stepBtn, continueBtn, breakpointBtn;
+    /* a kifejezésfa fejlécének ikon-gombjai (alprogramba lépés/kilépés) */
+    private Button headerEnterBtn, headerLeaveBtn;
 
     public IdeView(Context ctx, Host host) {
         super(ctx);
@@ -198,8 +200,7 @@ public class IdeView extends LinearLayout {
         exprTree.setListener(new ExprTreeView.NodeSelectListener() {
             @Override
             public void onNodeSelected(ExprNode node) {
-                enterBtn.setEnabled(GuiBridge.subStates(node) != null);
-                enterBtn.setAlpha(GuiBridge.subStates(node) != null ? 1f : 0.4f);
+                setEnterEnabled(GuiBridge.subStates(node) != null);
             }
         });
         exprTree.setEnterListener(new ExprTreeView.EnterListener() {
@@ -678,8 +679,29 @@ public class IdeView extends LinearLayout {
         LinearLayout exprPanel = panel(ctx, Theme.p().panelBg);
         exprPanel.setOrientation(VERTICAL);
         PanelHeader exprHeader = new PanelHeader(ctx, "Kifejezés kiértékelése", VsIcons.TREE, Theme.p().synFunction);
-        exprHeader.addAction(enterBtn != null ? enterBtn : FlatButton.iconButton(ctx, VsIcons.STEP_INTO, Theme.p().sideBarFg, "Belépés"));
-        exprHeader.addAction(leaveBtn != null ? leaveBtn : FlatButton.iconButton(ctx, VsIcons.STEP_OUT, Theme.p().sideBarFg, "Kilépés"));
+        /* A fejlécben csak ikon-gombok vannak (mint az asztali TOOL-gombok),
+           hogy a cím elférjen mellette; a szöveges párjuk a Futtatás panelre
+           kerül, ha az alprogram-mód be van kapcsolva. */
+        headerEnterBtn = FlatButton.iconButton(ctx, VsIcons.STEP_INTO, Theme.p().sideBarFg, "Belépés alprogramba");
+        headerLeaveBtn = FlatButton.iconButton(ctx, VsIcons.STEP_OUT, Theme.p().sideBarFg, "Alprogram elhagyása");
+        headerEnterBtn.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                doEnter();
+            }
+        });
+        headerLeaveBtn.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                doLeave();
+            }
+        });
+        headerEnterBtn.setEnabled(false);
+        headerEnterBtn.setAlpha(0.4f);
+        headerLeaveBtn.setEnabled(false);
+        headerLeaveBtn.setAlpha(0.4f);
+        exprHeader.addAction(headerEnterBtn);
+        exprHeader.addAction(headerLeaveBtn);
         exprPanel.addView(exprHeader);
         exprPanel.addView(exprTree, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.45f));
 
@@ -695,6 +717,18 @@ public class IdeView extends LinearLayout {
             b.setEnabled(en);
             b.setAlpha(en ? 1f : 0.45f);
         }
+    }
+
+    /** A belépés-alprogramba gombok (futtatás panel + fejléc) együtt kezelve. */
+    private void setEnterEnabled(boolean en) {
+        setEnabled(enterBtn, en);
+        setEnabled(headerEnterBtn, en);
+    }
+
+    /** A kilépés gombok (futtatás panel + fejléc) együtt kezelve. */
+    private void setLeaveEnabled(boolean en) {
+        setEnabled(leaveBtn, en);
+        setEnabled(headerLeaveBtn, en);
     }
 
     private void editState() {
@@ -734,8 +768,8 @@ public class IdeView extends LinearLayout {
         setEnabled(runBigBtn, true);
         setEnabled(stopBtn, false);
         setEnabled(parseBtn, true);
-        setEnabled(enterBtn, false);
-        setEnabled(leaveBtn, false);
+        setEnterEnabled(false);
+        setLeaveEnabled(false);
         running = false;
         inpPanes.setEditable(true);
         inpPanes.resetAttributes();
@@ -1028,7 +1062,7 @@ public class IdeView extends LinearLayout {
             return;
         }
         callStack.enter(n.toString(), GuiBridge.subStates(n));
-        setEnabled(leaveBtn, true);
+        setLeaveEnabled(true);
         updateStatus();
     }
 
@@ -1039,7 +1073,7 @@ public class IdeView extends LinearLayout {
     public void doLeave() {
         callStack.leave();
         if (callStack.stackDepth() <= 1) {
-            setEnabled(leaveBtn, false);
+            setLeaveEnabled(false);
         }
         updateStatus();
     }

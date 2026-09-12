@@ -58,7 +58,7 @@ public class GutterView extends View {
         if (l == null) {
             return -1;
         }
-        float ey = y + editor.getScrollY();
+        float ey = y + editor.getScrollY() - editor.getPaddingTop();
         int line = l.getLineForVertical((int) ey);
         if (line < 0 || line >= l.getLineCount()) {
             return -1;
@@ -75,13 +75,17 @@ public class GutterView extends View {
         if (l == null) {
             return;
         }
-        int lh = l.getLineBottom(0) - l.getLineTop(0);
-        int scroll = editor.getScrollY();
-        int w = getWidth();
+        /* A szerkesztő a szöveget paddingTop eltolással rajzolja, és saját
+           scrollY-val görget: a sorszámok ugyanarra a bazisvonalra kerülnek,
+           mint a kód (getLineBaseline), így pontosan egymás mellett vannak. */
+        final int padT = editor.getPaddingTop();
+        final int scroll = editor.getScrollY();
+        final int w = getWidth();
+        final float textSize = textPaint.getTextSize();
 
         for (int i = 0; i < l.getLineCount(); i++) {
-            int y = l.getLineTop(i) - scroll;
-            if (y + lh < 0 || y > getHeight()) {
+            int base = l.getLineBaseline(i) + padT - scroll;
+            if (base - textSize * 1.4f > getHeight() || base < -textSize * 0.4f) {
                 continue;
             }
             int caretLine = editor.caretLine() - 1;
@@ -89,28 +93,27 @@ public class GutterView extends View {
             textPaint.setColor(isCaret ? p.gutterActiveFg : p.gutterFg);
             String num = String.valueOf(i + 1);
             float tw = textPaint.measureText(num);
-            g.drawText(num, w - FlatButton.dp(getContext(), 16) - tw, y + lh * 0.82f, textPaint);
+            g.drawText(num, w - FlatButton.dp(getContext(), 16) - tw, base, textPaint);
+
+            float cy = base - textSize * 0.35f;
 
             // töréspont pötty
             if (editor.isBreakpoint(i)) {
                 dotPaint.setColor(p.error);
-                float cx = FlatButton.dp(getContext(), 8);
-                float cy = y + lh / 2f;
-                g.drawCircle(cx, cy, FlatButton.dpf(getContext(), 3.2f), dotPaint);
+                g.drawCircle(FlatButton.dpf(getContext(), 8), cy,
+                             FlatButton.dpf(getContext(), 3.2f), dotPaint);
             }
             // hibajelzés
             if (editor.isErrorLine(i)) {
                 dotPaint.setColor(p.error);
-                float cx = FlatButton.dp(getContext(), 8);
-                float cy = y + lh / 2f;
-                g.drawCircle(cx, cy, FlatButton.dpf(getContext(), 3.2f), dotPaint);
+                g.drawCircle(FlatButton.dpf(getContext(), 8), cy,
+                             FlatButton.dpf(getContext(), 3.2f), dotPaint);
             }
             // a futás aktuális sora
             if (i == editor.getRunningLine()) {
                 arrowPaint.setColor(p.warning);
                 arrow.reset();
-                float ax = FlatButton.dp(getContext(), 3);
-                float cy = y + lh / 2f;
+                float ax = FlatButton.dpf(getContext(), 3);
                 float a = FlatButton.dpf(getContext(), 4.5f);
                 arrow.moveTo(ax, cy - a);
                 arrow.lineTo(ax + a * 1.6f, cy);
