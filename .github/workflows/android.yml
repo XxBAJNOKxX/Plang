@@ -46,3 +46,17 @@ jobs:
           name: app-release
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+      - name: APK-k feltöltése Release-be (közvetlen, zip nélküli letöltés)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=android-latest
+          gh release create "$TAG" \
+            --title "PLanG Android – legfrissebb build" \
+            --notes "Közvetlen letöltés (nem zip): app-debug.apk (telepítésre ez való) és app-release.apk. Minden pushnál frissül." \
+            || true
+          gh release upload "$TAG" \
+            android/app/build/outputs/apk/debug/app-debug.apk \
+            android/app/build/outputs/apk/release/app-release.apk \
+            --clobber
