@@ -55,7 +55,7 @@ public class PanelHeader extends LinearLayout {
 
         title = new TextView(ctx);
         title.setText(text);
-        title.setTextColor(Theme.p().sideBarTitleFg);
+        title.setTextColor(Theme.readableOn(Theme.p().panelBg));
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         title.setSingleLine(true);
@@ -86,7 +86,7 @@ public class PanelHeader extends LinearLayout {
 
     public void applyTheme() {
         Theme.Palette p = Theme.p();
-        title.setTextColor(p.sideBarTitleFg);
+        title.setTextColor(Theme.readableOn(p.panelBg));
         for (int i = 0; i < getChildCount(); i++) {
             android.view.View c = getChildAt(i);
             if (c instanceof ImageView && iconType >= 0) {

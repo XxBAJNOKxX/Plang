@@ -128,7 +128,7 @@ public class MainActivity extends Activity implements IdeView.Host {
     private void addMenu(LinearLayout parent, String title, final Object[][] items) {
         TextView b = new TextView(this);
         b.setText(title);
-        b.setTextColor(Theme.p().titleBarFg);
+        b.setTextColor(Theme.readableOn(Theme.p().titleBar));
         b.setTextSize(13);
         int pad = FlatButton.dp(this, 10);
         b.setPadding(pad, 0, pad, 0);
@@ -285,7 +285,7 @@ public class MainActivity extends Activity implements IdeView.Host {
         for (int i = 0; i < menuBar.getChildCount(); i++) {
             View c = menuBar.getChildAt(i);
             if (c instanceof TextView) {
-                ((TextView) c).setTextColor(Theme.p().titleBarFg);
+                ((TextView) c).setTextColor(Theme.readableOn(Theme.p().titleBar));
             }
         }
         titleView.setText(ide.hasUnsavedChanges() ? "PLanG – " + ide.currentFileName() + " •" : ide.currentFileName() + " – PLanG");

@@ -277,9 +277,9 @@ public class StateTableView extends LinearLayout {
             hp.setTypeface(Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD));
             hp.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP,
                     11, getResources().getDisplayMetrics()));
-            /* A változónevek (oszlopfejlécek) az editorFg erős kontrasztú
-               színét kapják mindkét módban (a sideBarTitleFg halvány volt). */
-            hp.setColor(p.editorFg);
+            /* A változónevek (oszlopfejlécek) a fejléc háteréből számított,
+               garantáltan olvasható színt kapnak (téma-független kontraszt). */
+            hp.setColor(Theme.readableOn(p.tableHeaderBg));
             float baseline = (getHeight() + hp.getTextSize() * 0.7f) / 2f;
             float x = 0;
             for (int c = 0; c < colWidths.length; c++) {

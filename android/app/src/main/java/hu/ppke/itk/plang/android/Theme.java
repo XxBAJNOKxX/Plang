@@ -264,6 +264,14 @@ public final class Theme {
         setMode(isDark() ? LIGHT : DARK);
     }
 
+    /** Jól olvasható szövegszín a megadott háttérszínre (téma-független):
+        sötét háttéren világos, világos háttéren sötét szöveget ad. */
+    public static int readableOn(int bg) {
+        int r = (bg >> 16) & 0xFF, g = (bg >> 8) & 0xFF, b = bg & 0xFF;
+        double lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+        return lum > 0.55 ? 0xFF1F1F1F : 0xFFF2F2F2;
+    }
+
     public static int alpha(int color, int a) {
         return (color & 0x00FFFFFF) | (a << 24);
     }
