@@ -44,6 +44,9 @@ public class CodeEditorView extends EditText {
 
     private final TreeSet<Integer> errorLines = new TreeSet<Integer>();
     private final TreeSet<Integer> breakpoints = new TreeSet<Integer>();
+    /* a sorszámsáv, amelyet a töréspont/hiba/futásjelölés változásakor
+       frissíteni kell (a sáv külön nézet, önmagát nem rajtolja újra) */
+    private android.view.View gutterView;
     private int runningLine = -1;
 
     private final PlangUndoManager undoManager = new PlangUndoManager();
@@ -295,6 +298,7 @@ public class CodeEditorView extends EditText {
             }
         }
         invalidate();
+        invalidateGutter();
     }
 
     public int[] getErrorLines() {
@@ -314,6 +318,18 @@ public class CodeEditorView extends EditText {
         if (runningLine != line) {
             runningLine = line;
             invalidate();
+            invalidateGutter();
+        }
+    }
+
+    /** A sorszámsáv nézetének megadása (a jelölések rajta jelennek meg). */
+    public void setGutterView(android.view.View v) {
+        gutterView = v;
+    }
+
+    private void invalidateGutter() {
+        if (gutterView != null) {
+            gutterView.invalidate();
         }
     }
 
@@ -328,6 +344,7 @@ public class CodeEditorView extends EditText {
             breakpoints.add(line);
         }
         invalidate();
+        invalidateGutter();
     }
 
     public boolean isBreakpoint(int line) {
@@ -346,6 +363,7 @@ public class CodeEditorView extends EditText {
     public void clearBreakpoints() {
         breakpoints.clear();
         invalidate();
+        invalidateGutter();
     }
 
     /* =================== keresés/csere =================== */

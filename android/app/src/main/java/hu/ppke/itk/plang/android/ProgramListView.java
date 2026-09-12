@@ -168,6 +168,7 @@ public class ProgramListView extends ListView {
             setTextSizeFromPrefs();
         }
 
+
         void setTextSizeFromPrefs() {
             String family = AppPrefs.getFontFamily();
             int size = AppPrefs.getFontSize();

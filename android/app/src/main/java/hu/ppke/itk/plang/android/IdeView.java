@@ -116,6 +116,16 @@ public class IdeView extends LinearLayout {
     private final java.util.List<PanelHeader> headers = new ArrayList<PanelHeader>();
     /* (gomb, stílus, ikon) hármasok: téma váltásnál újra stílust kapnak */
     private final java.util.List<Object[]> styledButtons = new ArrayList<Object[]>();
+    /* az elválasztóvonalak (téma váltásnál átszínezve) */
+    private final java.util.List<View> dividers = new ArrayList<View>();
+
+    /** Látható elválasztó a panelek között (1dp vonal). */
+    private View divider(Context ctx, boolean vertical) {
+        View d = new View(ctx);
+        d.setBackgroundColor(Theme.p().border);
+        dividers.add(d);
+        return d;
+    }
 
     public IdeView(Context ctx, Host host) {
         super(ctx);
@@ -158,6 +168,7 @@ public class IdeView extends LinearLayout {
         });
 
         gutter = new GutterView(ctx, progText);
+        progText.setGutterView(gutter);
 
         progList = new ProgramListView(ctx);
         progList.setListener(new ProgramListView.ItemSelectListener() {
@@ -339,6 +350,7 @@ public class IdeView extends LinearLayout {
         LinearLayout editorRow = new LinearLayout(ctx);
         editorRow.setOrientation(HORIZONTAL);
         editorRow.addView(gutter, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT));
+        editorRow.addView(divider(ctx, true), new LayoutParams(FlatButton.dp(ctx, 1), LayoutParams.MATCH_PARENT));
         editorRow.addView(progText, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
         editorHolder = new LinearLayout(ctx);
@@ -370,11 +382,13 @@ public class IdeView extends LinearLayout {
         consoleRow = new LinearLayout(ctx);
         consoleRow.setOrientation(HORIZONTAL);
         consoleRow.addView(inputWrap, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+        consoleRow.addView(divider(ctx, true), new LinearLayout.LayoutParams(FlatButton.dp(ctx, 1), LayoutParams.MATCH_PARENT));
         consoleRow.addView(outputWrap, new LinearLayout.LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
         LinearLayout centerCol = new LinearLayout(ctx);
         centerCol.setOrientation(VERTICAL);
         centerCol.addView(editorArea, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.62f));
+        centerCol.addView(divider(ctx, false), new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, FlatButton.dp(ctx, 1)));
         centerCol.addView(consoleRow, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.38f));
 
         /* ---- vizsgálópanel ---- */
@@ -384,7 +398,9 @@ public class IdeView extends LinearLayout {
         content.setOrientation(HORIZONTAL);
         content.addView(activityBar, new LayoutParams(FlatButton.dp(ctx, 46), LayoutParams.MATCH_PARENT));
         content.addView(sideBar, new LayoutParams(sideWidth, LayoutParams.MATCH_PARENT));
+        content.addView(divider(ctx, true), new LayoutParams(FlatButton.dp(ctx, 1), LayoutParams.MATCH_PARENT));
         content.addView(centerCol, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+        content.addView(divider(ctx, true), new LayoutParams(FlatButton.dp(ctx, 1), LayoutParams.MATCH_PARENT));
         content.addView(inspector, new LayoutParams(inspectorWidth, LayoutParams.MATCH_PARENT));
 
         addView(content, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
@@ -665,10 +681,8 @@ public class IdeView extends LinearLayout {
         Context ctx = getContext();
         LinearLayout p = panel(ctx, Theme.p().panelBg);
         p.setOrientation(VERTICAL);
-        int role = icon == VsIcons.INPUT ? PanelHeader.ROLE_INFO : PanelHeader.ROLE_SUCCESS;
-        PanelHeader h = new PanelHeader(ctx, title, icon, role);
-        headers.add(h);
-        p.addView(h);
+        /* A fül saját maga írja a csatorna nevét (BEMENET/KIMENET), a külső
+           fejléc csak megkettőzné – ezért nincs külön PanelHeader. */
         tabs.setLayoutParams(new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         p.addView(tabs);
         if (icon == VsIcons.INPUT) {
@@ -693,6 +707,7 @@ public class IdeView extends LinearLayout {
             callStack.setLayoutParams(new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, FlatButton.dp(ctx, 80)));
             callStackBox.addView(callStack);
             p.addView(callStackBox);
+            p.addView(divider(ctx, false), new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, FlatButton.dp(ctx, 1)));
         }
 
         varsPanelBox = panel(ctx, Theme.p().panelBg);
@@ -733,6 +748,7 @@ public class IdeView extends LinearLayout {
         exprPanelBox.addView(exprTree, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 0.45f));
 
         p.addView(varsPanelBox, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
+        p.addView(divider(ctx, false), new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, FlatButton.dp(ctx, 1)));
         p.addView(exprPanelBox, new LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         return p;
     }
@@ -1583,6 +1599,12 @@ public class IdeView extends LinearLayout {
         FlatButton.setIconButton(headerLeaveBtn, VsIcons.STEP_OUT, p.sideBarFg);
         if (searchHint != null) {
             searchHint.setTextColor(p.sideBarFg);
+        }
+        if (inspector != null) {
+            inspector.setBackgroundColor(p.panelBg);
+        }
+        for (View d : dividers) {
+            d.setBackgroundColor(p.border);
         }
         invalidate();
     }
